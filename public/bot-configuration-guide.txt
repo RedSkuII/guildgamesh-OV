@@ -1,0 +1,507 @@
+====================================================================
+DISCORD BOT CONFIGURATION GUIDE
+Resource Tracker - Complete Bot Dashboard Documentation
+====================================================================
+
+OVERVIEW
+--------
+The Bot Dashboard provides a complete interface for configuring Discord 
+bot integration. This guide covers server selection, channel/role 
+configuration, points system, and bot implementation.
+
+QUICK TIP
+---------
+Hold Ctrl (Windows/Linux) or Cmd (Mac) to select multiple channels 
+or roles in the dropdowns below.
+
+====================================================================
+SERVER SELECTION & SORTING
+====================================================================
+
+Discord Server Dropdown:
+- Select which Discord server to configure
+- Automatically sorted: Servers with bot installed first (✅), then 
+  servers without bot (⚠️)
+- Owner servers marked with 👑 crown icon
+- Shows real-time bot presence status
+- Only displays servers where you have Administrator permissions or 
+  ownership
+
+In-Game Guild Dropdown:
+- Select which in-game guild (House, Clan) to manage
+- Your Discord server can have MULTIPLE in-game guilds
+- Each in-game guild can only belong to ONE Discord server
+- Guilds on your server are completely separate (independent tracking)
+- Switch between guilds to view/edit their resources separately
+
+Adding Bot to Server:
+1. Select your Discord server from dropdown
+2. If bot not present, click "Add Bot to Server" button
+3. Authorize with Administrator permissions
+4. Refresh page to see configuration panel
+
+====================================================================
+CHANNEL CONFIGURATION (MULTI-SELECT)
+====================================================================
+
+Bot Channels - Where the bot posts notifications:
+• Select multiple channels (hold Ctrl/Cmd)
+• Examples: #announcements, #bot-logs, #resource-tracker
+• Used for: Website change notifications, general bot messages
+• Visual tags show selected channels with quick removal (×)
+
+Order Channels - Where resource orders are created:
+• Select multiple channels for order management
+• Examples: #orders, #requests, #marketplace
+• Used for: Public order system, fulfillment tracking
+• Supports Discord slash commands for creating/filling orders
+
+====================================================================
+ROLE CONFIGURATION (MULTI-SELECT)
+====================================================================
+
+Admin Roles - Roles that can access the bot dashboard:
+• Select multiple roles (hold Ctrl/Cmd)
+• Examples: @Admin, @Moderator, @Officers
+• Grants access to: Configuration changes, statistics, activity logs
+• Separate from resource permissions (controlled via DISCORD_ROLES_CONFIG 
+  environment variable)
+
+====================================================================
+POINTS & BONUS SYSTEM
+====================================================================
+
+Discord Order Fulfillment Bonus: 0-200%
+----------------------------------------
+• Default: 50% (1.5x points)
+• Controls point multiplier for filling orders via Discord bot
+• Scaling:
+  - 0% = No bonus (1.0x base points)
+  - 50% = 1.5x points (recommended)
+  - 100% = 2.0x points (double points)
+  - 200% = 3.0x points (triple points)
+• Purpose: Encourages Discord-based resource distribution
+
+Website Resource Addition Bonus: 0-200%
+----------------------------------------
+• Default: 0% (no bonus)
+• Controls point multiplier for adding resources via website
+• Same scaling as Discord bonus
+• Use cases:
+  - Set higher to encourage website usage
+  - Set lower to prioritize Discord activity
+  - Match Discord bonus for equal rewards
+
+Point Calculation Examples:
+---------------------------
+• Base points for adding 1000 resources = 100 points (0.1 per resource)
+• With 100% website bonus = 200 points
+• With 200% website bonus = 300 points
+• Filling Discord order with 50% bonus = 150 points per 1000 resources
+
+Note: Bonuses only apply to ADD actions, not SET or REMOVE operations.
+Status bonuses (critical +10%, below target +5%) also apply separately.
+
+====================================================================
+BOT BEHAVIOR TOGGLES
+====================================================================
+
+✅ Auto-Update Discord Embeds
+-----------------------------
+• Enabled: Bot edits existing embed messages when data changes
+• Disabled: Creates new messages for each update (historical record)
+• Use case: Keep pinned stock messages synchronized in real-time
+• Prevents: Channel spam from repeated new messages
+• Recommendation: Enable for most servers
+
+✅ Notify on Website Resource Changes
+--------------------------------------
+• Enabled: Bot posts notifications when resources are added/removed 
+  via website
+• Disabled: Only Discord-based changes trigger notifications
+• Use case: Keep Discord community informed of website activity
+• Example notification: "🔔 @Username added 1000x Iron Ore (+10 points)"
+• Recommendation: Enable for active guilds with website users
+
+✅ Allow Public Orders
+----------------------
+• Enabled: Any guild member can create resource requests via Discord
+• Disabled: Only admins/designated roles can manage orders
+• Use case: Democratic resource distribution vs. centralized control
+• Example command: /order create Metal Alloy 500
+• Recommendation: Enable for community-driven guilds, disable for 
+  admin-controlled distribution
+
+====================================================================
+CONFIGURATION WORKFLOW FOR SERVER OWNERS
+====================================================================
+
+Step 1: Add Bot to Discord Server
+----------------------------------
+• Select your server from dropdown
+• If bot not present, click "Add Bot to Server" button
+• Authorize with Administrator permissions
+• Refresh page to see configuration panel
+
+Step 2: Select In-Game Guild
+-----------------------------
+• Choose which in-game guild (House, Clan) to track
+• This links your Discord server to resource tracking
+• Your Discord server can track multiple in-game guilds (each configured separately)
+
+Step 3: Configure Channels
+---------------------------
+• Select Bot Channels (where bot posts notifications)
+  - Hold Ctrl/Cmd to select multiple
+  - Examples: #announcements, #bot-logs
+• Select Order Channels (where users can request resources)
+  - Hold Ctrl/Cmd to select multiple
+  - Examples: #orders, #marketplace
+
+Step 4: Configure Admin Roles
+------------------------------
+• Select roles that can manage bot configuration
+• Hold Ctrl/Cmd to select multiple roles
+• Examples: @Admin, @Moderator, @Officers
+
+Step 5: Set Point Bonuses
+--------------------------
+• Discord Order Fulfillment Bonus: 0-200% (recommended: 50%)
+• Website Addition Bonus: 0-200% (recommended: 0-100%)
+• Balance between Discord and website engagement
+
+Step 6: Enable Features
+------------------------
+• Toggle Auto-update embeds (recommended: ON)
+• Toggle Website notifications (recommended: ON for active guilds)
+• Toggle Public orders (ON for community-driven, OFF for admin-controlled)
+
+Step 7: Save Configuration
+---------------------------
+• Click "Save Configuration" button
+• Settings are stored per Discord server
+• Each server can have completely different settings
+
+Step 8: Verify Bot Functionality
+---------------------------------
+• Check bot appears online in your Discord server
+• Test bot commands in configured channels
+• Verify notifications appear when resources change
+• Check points are awarded correctly
+
+====================================================================
+MULTI-SERVER & MULTI-GUILD ARCHITECTURE
+====================================================================
+
+Understanding the Many-to-One Relationship:
+-------------------------------------------
+• ONE Discord server can manage MULTIPLE in-game guilds ✅
+• ONE in-game guild can only belong to ONE Discord server ✅
+• Guilds on the same Discord server are completely separate from each other
+• Each guild has independent resources, leaderboards, and activity logs
+• Once a guild is linked to a Discord server, other servers cannot claim it
+
+How It Works:
+-------------
+1. Multiple Guilds per Discord Server:
+   • Your Discord can track "House Melange", "Whitelist Second Guild", etc.
+   • Each guild is managed independently through the guild selector dropdown
+   • Perfect for alliances managing multiple Houses/Clans from one Discord
+
+2. Guild Exclusivity:
+   • Once you link a guild to your Discord server, it's locked to that server
+   • Other Discord servers cannot add or configure that guild
+   • This prevents conflicts and ensures clear ownership
+
+3. Independent Tracking:
+   • Resources: Each guild has separate resource quantities
+   • Leaderboards: Points tracked separately per guild
+   • Activity Logs: Actions recorded per guild
+   • Bot Configuration: Settings apply to selected guild only
+
+4. Easy Guild Switching:
+   • Use the guild selector dropdown on Resources page
+   • Previous guild selection remembered via browser
+   • Switch anytime to view/edit different guild's data
+   • No data mixing between guilds
+
+Why This Structure?
+-------------------
+• Organized Management: Alliance leaders can manage multiple guilds from one Discord
+• Clear Ownership: Each guild belongs to one community only
+• Data Integrity: No confusion about which server controls which guild
+• Permission Clarity: Discord roles and permissions apply across all your guilds
+• Scalability: Add unlimited guilds to your Discord server as needed
+
+Example Scenarios:
+------------------
+• Single Guild Setup:
+  - One Discord server managing one in-game guild
+  - Simplest configuration
+  - Most common for individual guilds/clans
+
+• Alliance Management:
+  - One Discord server tracking 3 different Houses
+  - Each House has separate resources and leaderboards
+  - Alliance leaders can switch between Houses easily
+  - Example: "Phoenix Alliance" Discord manages House Atreides, 
+    House Harkonnen, and House Corrino
+
+• Multi-Faction Community:
+  - Gaming community with separate Clans/Factions
+  - All managed from one Discord server
+  - Each faction competes independently on their own leaderboard
+  - Resources don't mix between factions
+
+What You CANNOT Do:
+-------------------
+✗ Link the same guild to multiple Discord servers (guild exclusivity)
+✗ Share resources between guilds on your Discord (completely separate)
+✗ Combine leaderboards across guilds (tracked independently)
+✗ Transfer a guild to another Discord server (requires admin unlinking)
+
+Important Notes:
+----------------
+• Admin roles are server-specific, apply to all guilds on your server
+• Bot presence must be confirmed before configuration appears
+• Configuration changes only affect the selected Discord server
+• If your desired guild is already linked elsewhere, it cannot be added
+
+====================================================================
+TROUBLESHOOTING
+====================================================================
+
+⏳ Guild dropdown shows "No Guilds Available" or "Loading..."?
+--------------------------------------------------------------
+• This is NORMAL during initial page load - the system is authenticating
+  with Discord
+• The system automatically retries authentication after 1 second
+• Your guilds will appear automatically within 1-2 seconds
+• NO MANUAL REFRESH NEEDED - just wait for the automatic retry
+• If guilds don't appear after 5 seconds, try refreshing the page once
+• This behavior prevents race conditions between page load and Discord
+  authentication
+• You may see this briefly when navigating between pages - this is expected
+
+Technical Details:
+• The app waits for your Discord session to fully authenticate
+• It then fetches your Discord servers and matches them to configured guilds
+• If the first attempt is too early, it automatically retries
+• Your previous guild selection is remembered via browser localStorage
+
+❌ Can't see my Discord server in the list?
+-------------------------------------------
+• Ensure you've granted the app permission to see your servers when 
+  logging in
+• Required OAuth scopes: identify, guilds, guilds.members.read
+• Try logging out and back in to refresh Discord token
+• Check Discord Developer Mode is enabled
+• Verify you have Administrator permissions or ownership on the server
+
+⚠️ Server shows "Bot needs to be added to this server"?
+-------------------------------------------------------
+• The bot isn't installed on that server yet
+• Only servers where the bot is installed can be configured
+• Click "Add Bot to Server" button to install
+• Grant Administrator permissions during installation
+• Refresh page after bot is added
+
+🔄 Changes not saving?
+----------------------
+• Check browser console (F12) for detailed error messages
+• Ensure you've selected at least one in-game guild
+• Verify you have admin permissions on the Discord server
+• Check that at least one channel/role is selected (or leave empty)
+• Ensure bot is present in the server
+• Try refreshing the page and attempting again
+
+📊 Bot not posting updates?
+---------------------------
+• Ensure "Auto-Update Discord Embeds" is enabled in dashboard
+• Check that the bot has permissions to post in selected bot channels
+• Verify channel IDs are correct (no deleted channels selected)
+• Ensure bot has "Send Messages" and "Embed Links" permissions
+• Check bot is online in your Discord server
+• Review bot logs for connection errors
+
+🔐 Permission errors when configuring?
+--------------------------------------
+• Verify you're an Administrator or Owner on the Discord server
+• Check that your Discord roles are properly synced
+• Try signing out and signing back in
+• Contact your server owner for role assignment
+
+⚡ Bot commands not working?
+----------------------------
+• Ensure the bot is online and added to your Discord server
+• Verify bot has proper permissions in the configured channels
+• Check that you have the required roles to use specific commands
+• Try using commands in the channels you configured as order/bot channels
+• Contact support if commands continue to fail
+
+====================================================================
+AVAILABLE BOT COMMANDS
+====================================================================
+
+Core Commands (Available to all members):
+------------------------------------------
+/stock
+• Shows current resource levels for your guild
+• Displays quantities, categories, and status indicators
+• Color-coded by resource status (green=good, red=critical)
+
+/leaderboard
+• Shows top contributors in your guild
+• Displays total points and recent activity
+• Updates in real-time as contributions are made
+
+/help
+• Lists all available bot commands
+• Shows usage examples and descriptions
+• Provides quick reference for features
+
+Order Management Commands:
+--------------------------
+Note: Available to all members if "Allow Public Orders" is enabled,
+otherwise restricted to admin roles only.
+
+/order create [item] [quantity]
+• Create a resource request
+• Example: /order create Metal Alloy 500
+• Bot notifies in configured order channels
+
+/order list
+• View all pending orders
+• Shows requestor, item, quantity, and timestamp
+• Filter by your own orders or view all
+
+/order fill [order_id]
+• Fulfill a pending order
+• Automatically awards bonus points based on configuration
+• Updates resource quantities and notifies requestor
+
+/order cancel [order_id]
+• Cancel your own pending order
+• Admins can cancel any order
+• Removes from pending list
+
+Admin Commands (Restricted to configured admin roles):
+-------------------------------------------------------
+/config show
+• Display current bot configuration for your server
+• Shows channels, roles, bonuses, and toggle settings
+• Useful for verifying setup
+
+/stock update [item] [quantity] [reason]
+• Manually update resource quantities via Discord
+• Awards points based on website bonus percentage
+• Records action in audit log
+• Example: /stock update Iron Ore 1000 "Harvested from expedition"
+
+/stock refresh
+• Force refresh the stock embed
+• Useful if auto-update is disabled
+• Manually syncs Discord with website data
+
+====================================================================
+NEED SUPPORT?
+====================================================================
+
+For additional help, feature requests, or bug reports:
+• Contact your server administrator for configuration assistance
+• Check the main dashboard for system announcements and updates
+• Review your bot configuration settings carefully in the dashboard
+• Report issues or request features through your community channels
+
+Common Questions:
+-----------------
+Q: How do I add the bot to my Discord server?
+A: Click the "Add Bot to Server" button in the Bot Dashboard after 
+   selecting your server from the dropdown.
+
+Q: Who can configure the bot settings?
+A: Server owners and administrators can access the Bot Dashboard. 
+   Admin roles configured in the dashboard can also modify settings.
+
+Q: How are points calculated?
+A: Base points are 0.1 per resource. ADD actions receive the configured
+   website or Discord bonus (0-200%). SET actions award flat 1 point.
+   Status bonuses add +10% for critical, +5% for below target.
+
+Q: Can multiple Discord servers share the same in-game guild?
+A: No. Each in-game guild belongs to exactly ONE Discord server. However,
+   one Discord server can manage multiple in-game guilds (e.g., House A,
+   House B, House C), with separate resources and leaderboards for each.
+
+Q: What happens if I change the bonus percentages?
+A: New bonuses apply to all future actions. Previously awarded points
+   are not retroactively changed.
+
+Q: How do I reset or clear old orders?
+A: Use /order cancel for individual orders, or contact support for
+   bulk order management.
+
+====================================================================
+SERVICE INFORMATION
+====================================================================
+
+This Resource Tracker system is hosted and maintained for your use.
+All technical infrastructure, database management, and bot hosting
+are handled centrally.
+
+Data Privacy & Security:
+------------------------
+• Your Discord data is used only for authentication and permissions
+• Resource data is stored securely in encrypted databases
+• GDPR compliant: You can export or delete your data at any time
+• Activity logs maintain transparency of all actions
+• No data is shared with third parties
+
+System Availability:
+--------------------
+• Bot and website are hosted 24/7 for continuous access
+• Regular backups ensure data protection
+• Automatic updates deployed without service interruption
+• Monitored for performance and uptime
+
+Your Responsibilities:
+----------------------
+• Configure your Discord server settings properly
+• Ensure bot has required permissions in your server
+• Manage admin roles and channel assignments
+• Monitor resource tracking for your guild
+• Report any issues or concerns promptly
+
+====================================================================
+VERSION INFORMATION
+====================================================================
+
+Resource Tracker Version: 1.0
+Documentation Version: 3.0
+Last Updated: November 2025
+
+System Features:
+----------------
+• Discord OAuth authentication
+• Multi-server support with independent configurations
+• Multi-guild resource tracking
+• Points system with configurable bonuses (0-200%)
+• Real-time leaderboards
+• Order management system
+• Complete activity audit logs
+• Auto-updating Discord embeds
+• Website and Discord integration
+• Mobile-responsive design with dark mode
+
+====================================================================
+END OF DOCUMENTATION
+====================================================================
+
+This guide covers everything you need to configure and use the
+Discord Bot Dashboard and Resource Tracker system.
+
+For ongoing support and feature requests, contact your community
+administrators or use the designated support channels.
+
+Thank you for using Resource Tracker!
+====================================================================

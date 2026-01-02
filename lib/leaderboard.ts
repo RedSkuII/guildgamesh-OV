@@ -1,0 +1,382 @@
+import { db, leaderboard, resources, users } from './db'
+import { eq, desc, sql, and, gte } from 'drizzle-orm'
+import { nanoid } from 'nanoid'
+
+// Constants for points calculation
+const BASE_POINTS_PER_1000_RESOURCES = 100
+const SET_ACTION_POINTS = 1
+const REFINED_ACTION_POINTS = 2 // Special points for Refined category
+
+// Status bonuses (as decimal percentages)
+const STATUS_BONUSES = {
+  critical: 0.10,        // +10%
+  below_target: 0.05,    // +5%
+  at_target: 0.0,        // 0%
+  above_target: 0.0,     // 0%
+  well_stocked: 0.0,     // 0%
+  surplus: 0.0           // 0%
+}
+
+export interface PointsCalculation {
+  basePoints: number
+  resourceMultiplier: number
+  statusBonus: number
+  finalPoints: number
+}
+
+/**
+ * Calculate points for a resource action
+ */
+export function calculatePoints(
+  actionType: 'ADD' | 'SET' | 'REMOVE',
+  quantityChanged: number,
+  resourceMultiplier: number,
+  resourceStatus: string,
+  resourceCategory: string
+): PointsCalculation {
+  // No points for REMOVE actions or if multiplier is 0 (which represents -100% in UI)
+  if (actionType === 'REMOVE' || resourceMultiplier === 0) {
+    return {
+      basePoints: 0,
+      resourceMultiplier,
+      statusBonus: 0,
+      finalPoints: 0
+    }
+  }
+
+  // Special handling for Refined category - always 2 points flat
+  if (resourceCategory === 'Refined') {
+    return {
+      basePoints: REFINED_ACTION_POINTS,
+      resourceMultiplier: 1.0, // Display as 1x (multiplier not actually used)
+      statusBonus: 0,
+      finalPoints: REFINED_ACTION_POINTS
+    }
+  }
+
+  let basePoints = 0
+  
+  if (actionType === 'SET') {
+    // SET actions get fixed points regardless of quantity - NO MULTIPLIERS OR BONUSES
+    return {
+      basePoints: SET_ACTION_POINTS,
+      resourceMultiplier: 1.0,
+      statusBonus: 0,
+      finalPoints: SET_ACTION_POINTS
+    }
+  } else if (actionType === 'ADD') {
+    // ADD actions get points based on quantity added (0.1 points per resource, so 100 points per 1000)
+    basePoints = (quantityChanged / 1000) * BASE_POINTS_PER_1000_RESOURCES
+  }
+
+  // Apply resource multiplier (only for ADD actions)
+  const multipliedPoints = basePoints * resourceMultiplier
+
+  // Apply status bonus (only for ADD actions)
+  const statusBonus = STATUS_BONUSES[resourceStatus as keyof typeof STATUS_BONUSES] || 0
+  const statusBonusAmount = multipliedPoints * statusBonus
+  const finalPoints = multipliedPoints + statusBonusAmount
+
+  console.log(`Points calculation: resource=${resourceCategory}, status=${resourceStatus}, statusBonus=${statusBonus}, multipliedPoints=${multipliedPoints}, statusBonusAmount=${statusBonusAmount}, finalPoints=${finalPoints}`)
+
+  return {
+    basePoints,
+    resourceMultiplier,
+    statusBonus,
+    finalPoints: Math.round(finalPoints * 100) / 100 // Round to 2 decimal places
+  }
+}
+
+/**
+ * Award points to a user for a resource action
+ * 
+ * @param source - Where the action came from: 'website' or 'discord'
+ */
+export async function awardPoints(
+  userId: string,
+  resourceId: string,
+  actionType: 'ADD' | 'SET' | 'REMOVE',
+  quantityChanged: number,
+  resourceData: {
+    name: string
+    category: string
+    status: string
+    multiplier: number
+    guildId: string | null
+  },
+  source: 'website' | 'discord' = 'website'
+): Promise<PointsCalculation> {
+  console.log('[AWARD POINTS] Called with:', {
+    userId,
+    resourceId,
+    actionType,
+    quantityChanged,
+    resourceData,
+    source
+  })
+
+  const calculation = calculatePoints(
+    actionType,
+    quantityChanged,
+    resourceData.multiplier,
+    resourceData.status,
+    resourceData.category
+  )
+
+  console.log('[AWARD POINTS] Calculation result:', calculation)
+
+  // Apply website bonus if action is from website and points were earned
+  let finalPoints = calculation.finalPoints
+  if (source === 'website' && finalPoints > 0 && actionType === 'ADD') {
+    try {
+      // Fetch website bonus from bot_configurations for the main guild
+      const guildId = process.env.DISCORD_GUILD_ID
+      if (guildId) {
+        const { botConfigurations } = await import('./db')
+        const { eq } = await import('drizzle-orm')
+        
+        const configs = await db
+          .select()
+          .from(botConfigurations)
+          .where(eq(botConfigurations.guildId, guildId))
+          .limit(1)
+        
+        if (configs.length > 0 && configs[0].websiteBonusPercentage > 0) {
+          const websiteBonus = configs[0].websiteBonusPercentage
+          const bonusMultiplier = 1.0 + (websiteBonus / 100)
+          finalPoints = calculation.finalPoints * bonusMultiplier
+          console.log(`[AWARD POINTS] Applied website bonus: ${websiteBonus}% (${bonusMultiplier}x) = ${finalPoints} points`)
+        }
+      }
+    } catch (error) {
+      console.error('[AWARD POINTS] Error fetching website bonus:', error)
+      // Continue with original points if bonus fetch fails
+    }
+  }
+
+  // Only create leaderboard entry if points were earned
+  if (finalPoints > 0) {
+    console.log('[AWARD POINTS] Inserting into leaderboard...')
+    await db.insert(leaderboard).values({
+      id: nanoid(),
+      userId,
+      resourceId,
+      guildId: resourceData.guildId,
+      actionType,
+      quantityChanged,
+      basePoints: calculation.basePoints,
+      resourceMultiplier: calculation.resourceMultiplier,
+      statusBonus: calculation.statusBonus,
+      finalPoints: Math.round(finalPoints * 100) / 100, // Round to 2 decimal places
+      resourceName: resourceData.name,
+      resourceCategory: resourceData.category,
+      resourceStatus: resourceData.status,
+      createdAt: new Date(),
+    })
+    console.log('[AWARD POINTS] Successfully inserted!')
+  } else {
+    console.log('[AWARD POINTS] No points earned, skipping insert')
+  }
+
+  return {
+    ...calculation,
+    finalPoints: Math.round(finalPoints * 100) / 100
+  }
+}
+
+/**
+ * Get leaderboard rankings with optional time filtering, guild filtering, and pagination
+ * @param timeFilter - Time period filter
+ * @param limit - Number of results to return
+ * @param offset - Pagination offset
+ * @param guildIds - Array of guild IDs to filter by (REQUIRED for security)
+ */
+export async function getLeaderboard(
+  timeFilter?: '24h' | '7d' | '30d' | 'all', 
+  limit = 50, 
+  offset = 0,
+  guildIds?: string[] | null
+): Promise<{ rankings: any[], total: number }> {
+  try {
+    // SECURITY: Must always have guild IDs to prevent cross-guild data leakage
+    if (!guildIds || guildIds.length === 0) {
+      console.log('[LEADERBOARD] No guild IDs provided, returning empty results')
+      return { rankings: [], total: 0 }
+    }
+    
+    // Build conditions array
+    const conditions: any[] = []
+
+    // Time filter
+    if (timeFilter && timeFilter !== 'all') {
+      const now = new Date()
+      let cutoffDate: Date
+
+      switch (timeFilter) {
+        case '24h':
+          cutoffDate = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+          break
+        case '7d':
+          cutoffDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+          break
+        case '30d':
+          cutoffDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+          break
+      }
+
+      conditions.push(gte(leaderboard.createdAt, cutoffDate!))
+    }
+
+    // Guild filter - ALWAYS apply this for security
+    const { inArray } = await import('drizzle-orm')
+    conditions.push(inArray(leaderboard.guildId, guildIds))
+
+    // Combine conditions
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined
+
+    console.log(`Fetching leaderboard with filter: ${timeFilter}, guilds: [${guildIds.join(', ')}], limit: ${limit}, offset: ${offset}`)
+
+    // Get total count for pagination
+    const totalResult = await db
+      .select({
+        count: sql<number>`COUNT(DISTINCT ${leaderboard.userId})`.as('count')
+      })
+      .from(leaderboard)
+      .where(whereClause)
+
+    const total = totalResult[0]?.count || 0
+
+    const rankings = await db
+      .select({
+        userId: leaderboard.userId,
+        userName: sql<string>`COALESCE(${users.customNickname}, ${users.username}, ${leaderboard.userId})`.as('userName'),
+        totalPoints: sql<number>`SUM(${leaderboard.finalPoints})`.as('totalPoints'),
+        totalActions: sql<number>`COUNT(*)`.as('totalActions'),
+      })
+      .from(leaderboard)
+      .leftJoin(users, eq(leaderboard.userId, users.discordId))
+      .where(whereClause)
+      .groupBy(leaderboard.userId)
+      .orderBy(desc(sql`SUM(${leaderboard.finalPoints})`))
+      .limit(limit)
+      .offset(offset)
+
+    return { rankings, total }
+  } catch (error) {
+    console.error('Error in getLeaderboard:', error)
+    return { rankings: [], total: 0 }
+  }
+}
+
+/**
+ * Get detailed user contributions with pagination
+ * @param userId - User's Discord ID
+ * @param timeFilter - Time period filter
+ * @param limit - Number of results
+ * @param offset - Pagination offset
+ * @param guildIds - Array of guild IDs to filter by (REQUIRED for security)
+ */
+export async function getUserContributions(
+  userId: string, 
+  timeFilter?: '24h' | '7d' | '30d' | 'all',
+  limit = 100,
+  offset = 0,
+  guildIds?: string[]
+): Promise<{ contributions: any[], summary: any, total: number, userName?: string }> {
+  // SECURITY: Must have guild IDs to prevent cross-guild data leakage
+  if (!guildIds || guildIds.length === 0) {
+    console.log('[CONTRIBUTIONS] No guild IDs provided, returning empty results')
+    return {
+      contributions: [],
+      summary: { totalPoints: 0, totalActions: 0 },
+      total: 0,
+      userName: userId
+    }
+  }
+  
+  const conditions: any[] = [eq(leaderboard.userId, userId)]
+  
+  // Guild filter - ALWAYS apply for security
+  const { inArray } = await import('drizzle-orm')
+  conditions.push(inArray(leaderboard.guildId, guildIds))
+
+  if (timeFilter && timeFilter !== 'all') {
+    const now = new Date()
+    let cutoffDate: Date
+
+    switch (timeFilter) {
+      case '24h':
+        cutoffDate = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+        break
+      case '7d':
+        cutoffDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+        break
+      case '30d':
+        cutoffDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+        break
+    }
+
+    conditions.push(gte(leaderboard.createdAt, cutoffDate!))
+  }
+  
+  const whereClause = and(...conditions)
+
+  // Get total count for pagination
+  const totalResult = await db
+    .select({
+      count: sql<number>`COUNT(*)`.as('count')
+    })
+    .from(leaderboard)
+    .where(whereClause)
+
+  const total = totalResult[0]?.count || 0
+
+  const contributions = await db
+    .select()
+    .from(leaderboard)
+    .where(whereClause)
+    .orderBy(desc(leaderboard.createdAt))
+    .limit(limit)
+    .offset(offset)
+
+  const summaryResult = await db
+    .select({
+      totalPoints: sql<number>`COALESCE(SUM(${leaderboard.finalPoints}), 0)`.as('totalPoints'),
+      totalActions: sql<number>`COALESCE(COUNT(*), 0)`.as('totalActions'),
+    })
+    .from(leaderboard)
+    .where(whereClause)
+
+  // Get username from users table
+  const userResult = await db
+    .select({
+      userName: sql<string>`COALESCE(${users.customNickname}, ${users.username})`.as('userName'),
+    })
+    .from(users)
+    .where(eq(users.discordId, userId))
+    .limit(1)
+
+  return {
+    contributions,
+    summary: summaryResult[0] || { totalPoints: 0, totalActions: 0 },
+    total,
+    userName: userResult[0]?.userName || userId
+  }
+}
+
+/**
+ * Get user's rank in the leaderboard
+ * @param userId - User's Discord ID
+ * @param timeFilter - Time period filter
+ * @param guildIds - Array of guild IDs to filter by (REQUIRED for security)
+ */
+export async function getUserRank(userId: string, timeFilter?: '24h' | '7d' | '30d' | 'all', guildIds?: string[]) {
+  if (!guildIds || guildIds.length === 0) {
+    return null
+  }
+  
+  const result = await getLeaderboard(timeFilter, 1000, 0, guildIds) // Get top 1000
+  const userRankIndex = result.rankings.findIndex(ranking => ranking.userId === userId)
+  
+  return userRankIndex === -1 ? null : userRankIndex + 1
+} 
