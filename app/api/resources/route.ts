@@ -286,7 +286,7 @@ export async function PUT(request: NextRequest) {
 
     // Handle resource metadata update (admin only)
     if (resourceMetadata) {
-      const { id, name, category, description, imageUrl, multiplier } = resourceMetadata
+      const { id, name, category, description, imageUrl, multiplier, targetQuantity } = resourceMetadata
 
       // Verify user has access to the resource's guild and check ownership
       const existingResource = await db.select().from(resources).where(eq(resources.id, id)).limit(1)
@@ -337,6 +337,7 @@ export async function PUT(request: NextRequest) {
           description,
           imageUrl,
           multiplier,
+          targetQuantity,
           lastUpdatedBy: userId,
           updatedAt: new Date(),
         })
