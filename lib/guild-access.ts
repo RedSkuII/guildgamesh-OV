@@ -251,6 +251,74 @@ export async function getAccessibleGuilds(
   }
 }
 /**
+ * Check if user can manage (create/edit/delete) resources for a specific guild
+ * @param guildId - The in-game guild ID (e.g., 'house-melange')
+ * @param userRoles - Array of user's Discord role IDs
+ * @param hasGlobalAdmin - Whether user has global resource admin access
+ * @returns Promise<boolean> - True if user can manage resources for this guild
+ */
+export async function canManageGuildResources(
+  guildId: string,
+  userRoles: string[],
+  hasGlobalAdmin: boolean = false
+): Promise<boolean> {
+  try {
+    // Global admins can manage all guilds
+    if (hasGlobalAdmin) {
+      return true
+    }
+
+    // Fetch guild configuration
+    const guildData = await db
+      .select()
+      .from(guilds)
+      .where(eq(guilds.id, guildId))
+      .limit(1)
+
+    if (guildData.length === 0) {
+      console.warn(`[GUILD-ACCESS] Guild not found for manage check: ${guildId}`)
+      return false
+    }
+
+    const guild = guildData[0]
+
+    // Leader role = full management access
+    if (guild.discordLeaderRoleId && userRoles.includes(guild.discordLeaderRoleId)) {
+      console.log(`[GUILD-ACCESS] ✓ User has leader role for "${guild.title}"`)
+      return true
+    }
+
+    // Officer role = management access
+    if (guild.discordOfficerRoleId && userRoles.includes(guild.discordOfficerRoleId)) {
+      console.log(`[GUILD-ACCESS] ✓ User has officer role for "${guild.title}"`)
+      return true
+    }
+
+    // Admin role = management access (bot admin for this guild)
+    if (guild.adminRoleId) {
+      let adminRoles: string[]
+      try {
+        adminRoles = JSON.parse(guild.adminRoleId)
+      } catch {
+        adminRoles = [guild.adminRoleId]
+      }
+      
+      if (adminRoles.some(roleId => userRoles.includes(roleId))) {
+        console.log(`[GUILD-ACCESS] ✓ User has admin role for "${guild.title}"`)
+        return true
+      }
+    }
+
+    console.log(`[GUILD-ACCESS] ✗ User cannot manage resources for "${guild.title}"`)
+    return false
+
+  } catch (error) {
+    console.error('[GUILD-ACCESS] Error checking guild management access:', error)
+    return false
+  }
+}
+
+/**
  * Get all accessible guild IDs for a user across ALL Discord servers they are in
  * This is used for leaderboard, activity, and other cross-guild queries
  * @param session - NextAuth session object
