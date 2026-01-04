@@ -11,6 +11,7 @@ interface DiscordServer {
   name: string
   icon: string | null
   isOwner: boolean
+  isAdmin?: boolean // Discord ADMINISTRATOR permission or owner
   hasBotInstalled?: boolean
 }
 
@@ -171,7 +172,7 @@ export default function BotDashboardPage() {
           adminRoleId: data.adminRoleId || [],
           autoUpdateEmbeds: data.autoUpdateEmbeds ?? true,
           notifyOnWebsiteChanges: data.notifyOnWebsiteChanges ?? true,
-          orderFulfillmentBonus: data.orderFulfillmentBonus ?? 50,
+          orderFulfillmentBonus: data.orderFulfillmentBonus ?? 0,
           websiteBonusPercentage: data.websiteBonusPercentage ?? 0,
         } : g)
       )
@@ -266,7 +267,9 @@ export default function BotDashboardPage() {
           throw new Error('Failed to fetch in-game guilds')
         }
         
-        const data = await response.json()
+        const responseData = await response.json()
+        // Handle both { guilds: [...] } and raw array formats
+        const data = responseData.guilds || responseData
         setInGameGuilds(data)
         
         // Fetch role requirements for each guild
@@ -412,7 +415,7 @@ export default function BotDashboardPage() {
           adminRoleId: currentGuild.adminRoleId || [],
           autoUpdateEmbeds: currentGuild.autoUpdateEmbeds ?? true,
           notifyOnWebsiteChanges: currentGuild.notifyOnWebsiteChanges ?? true,
-          orderFulfillmentBonus: currentGuild.orderFulfillmentBonus ?? 50,
+          orderFulfillmentBonus: currentGuild.orderFulfillmentBonus ?? 0,
           websiteBonusPercentage: currentGuild.websiteBonusPercentage ?? 0,
         })
       })
@@ -879,7 +882,7 @@ export default function BotDashboardPage() {
               {/* Discord Order Fulfillment Bonus */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Discord Order Fulfillment Bonus: {inGameGuilds.find(g => g.id === selectedInGameGuildId)?.orderFulfillmentBonus ?? 50}%
+                  Discord Order Fulfillment Bonus: {inGameGuilds.find(g => g.id === selectedInGameGuildId)?.orderFulfillmentBonus ?? 0}%
                   <span className="text-gray-500 text-xs ml-2">(Bonus points for filling orders via Discord)</span>
                 </label>
                 <input
@@ -887,7 +890,7 @@ export default function BotDashboardPage() {
                   min="0"
                   max="200"
                   step="10"
-                  value={inGameGuilds.find(g => g.id === selectedInGameGuildId)?.orderFulfillmentBonus ?? 50}
+                  value={inGameGuilds.find(g => g.id === selectedInGameGuildId)?.orderFulfillmentBonus ?? 0}
                   onChange={(e) => {
                     const value = parseInt(e.target.value)
                     setInGameGuilds(prev =>
@@ -1030,8 +1033,11 @@ export default function BotDashboardPage() {
 
 
 
-              {/* Delete All Resources (Discord Server Owners Only) */}
-              {selectedInGameGuildId && discordServers.find(s => s.id === selectedDiscordServerId)?.isOwner && (
+              {/* Delete All Resources (Discord Server Owners/Admins Only) */}
+              {selectedInGameGuildId && (
+                discordServers.find(s => s.id === selectedDiscordServerId)?.isOwner ||
+                discordServers.find(s => s.id === selectedDiscordServerId)?.isAdmin
+              ) && (
                 <div className="pt-4 border-t border-guildgamesh-300 dark:border-primary-700/30">
                   <h3 className="text-lg font-semibold text-red-600 dark:text-red-400 mb-2">
                     ⚠️ Danger Zone
@@ -1069,8 +1075,8 @@ export default function BotDashboardPage() {
 
                   <div className="mt-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
                     <p className="text-xs text-red-800 dark:text-red-200">
-                      <strong>⚠️ Discord Server Owner Only:</strong> This button is only visible to Discord server owners. 
-                      It will delete all resources for the selected in-game guild. Other guilds on this Discord server will not be affected.
+                      <strong>⚠️ Admin Access Required:</strong> These buttons are only visible to Discord server owners, administrators, and super admins. 
+                      Actions will affect only the selected in-game guild. Other guilds on this Discord server will not be affected.
                     </p>
                   </div>
                 </div>

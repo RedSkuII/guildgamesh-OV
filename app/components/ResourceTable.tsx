@@ -181,6 +181,17 @@ interface CongratulationsState {
 // Category options for dropdown
 const CATEGORY_OPTIONS = ['Raw', 'Refined', 'Components', 'Other']
 
+// Guild permissions interface
+interface GuildPermissions {
+  canManageResources: boolean
+  canEditTargets: boolean
+  isLeader: boolean
+  isOfficer: boolean
+  isMember: boolean
+  hasGlobalAdmin?: boolean
+  isServerOwner?: boolean
+}
+
 export function ResourceTable({ userId, guildId }: ResourceTableProps) {
   const { data: session } = useSession()
   const router = useRouter()
@@ -188,7 +199,13 @@ export function ResourceTable({ userId, guildId }: ResourceTableProps) {
   // Use pre-computed permissions from session (computed server-side)
   const canEdit = session?.user?.permissions?.hasResourceAccess ?? false
   const isTargetAdmin = session?.user?.permissions?.hasTargetEditAccess ?? false
-  const isResourceAdmin = session?.user?.permissions?.hasResourceAdminAccess ?? false
+  const globalResourceAdmin = session?.user?.permissions?.hasResourceAdminAccess ?? false
+  
+  // Guild-specific permissions (fetched from API)
+  const [guildPermissions, setGuildPermissions] = useState<GuildPermissions | null>(null)
+  
+  // Effective permission: global admin OR guild-specific leader/officer
+  const isResourceAdmin = globalResourceAdmin || guildPermissions?.canManageResources || false
   
 
   
@@ -204,10 +221,11 @@ export function ResourceTable({ userId, guildId }: ResourceTableProps) {
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
-  const [itemsPerPage] = useState(25)
+  const [itemsPerPage, setItemsPerPage] = useState(25)
   const [updateModes, setUpdateModes] = useState<Map<string, 'absolute' | 'relative'>>(new Map())
   const [relativeValues, setRelativeValues] = useState<Map<string, number>>(new Map())
-  const [searchTerm, setSearchTerm] = useState('')
+  const [searchTerm, setSearchTerm] = useState('')  // What user types
+  const [activeSearchTerm, setActiveSearchTerm] = useState('')  // What's actually searched
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('grid')
   const [currentTime, setCurrentTime] = useState(new Date())
   const [recentActivity, setRecentActivity] = useState<any[]>([])
@@ -283,6 +301,33 @@ export function ResourceTable({ userId, guildId }: ResourceTableProps) {
       }))
     }
   }, [guildId])
+
+  // Fetch guild-specific permissions when guild changes
+  useEffect(() => {
+    const fetchGuildPermissions = async () => {
+      if (!guildId || !session) {
+        setGuildPermissions(null)
+        return
+      }
+      
+      try {
+        const response = await fetch(`/api/guilds/${guildId}/permissions`)
+        if (response.ok) {
+          const permissions = await response.json()
+          console.log('[ResourceTable] Guild permissions:', permissions)
+          setGuildPermissions(permissions)
+        } else {
+          console.error('[ResourceTable] Failed to fetch guild permissions')
+          setGuildPermissions(null)
+        }
+      } catch (error) {
+        console.error('[ResourceTable] Error fetching guild permissions:', error)
+        setGuildPermissions(null)
+      }
+    }
+    
+    fetchGuildPermissions()
+  }, [guildId, session])
 
   // Load view preference
   useEffect(() => {
@@ -412,6 +457,19 @@ export function ResourceTable({ userId, guildId }: ResourceTableProps) {
     }
   }
 
+  // Handle search submission (Enter key or Search button)
+  const handleSearch = () => {
+    setActiveSearchTerm(searchTerm)
+    setCurrentPage(1) // Reset to first page on search
+  }
+
+  // Clear search
+  const handleClearSearch = () => {
+    setSearchTerm('')
+    setActiveSearchTerm('')
+    setCurrentPage(1)
+  }
+
   // Fetch resources from API
   const fetchResources = async () => {
     try {
@@ -419,10 +477,11 @@ export function ResourceTable({ userId, guildId }: ResourceTableProps) {
       setError(null)
       const timestamp = Date.now()
       const guildParam = guildId ? `&guildId=${guildId}` : ''
-      const url = `/api/resources?t=${timestamp}${guildParam}&page=${currentPage}&limit=${itemsPerPage}`
+      const searchParam = activeSearchTerm ? `&search=${encodeURIComponent(activeSearchTerm)}` : ''
+      const url = `/api/resources?t=${timestamp}${guildParam}${searchParam}&page=${currentPage}&limit=${itemsPerPage}`
       
       const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 15000) // 15 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 second timeout
       
       const response = await fetch(url, {
         cache: 'no-store',
@@ -449,7 +508,7 @@ export function ResourceTable({ userId, guildId }: ResourceTableProps) {
       }
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
-        setError('Request timed out after 15 seconds. The server may be experiencing issues.')
+        setError('Request timed out after 30 seconds. The server may be experiencing issues. Try a smaller page size.')
       } else {
         setError(`Error loading resources: ${error instanceof Error ? error.message : 'Unknown error'}`)
       }
@@ -514,11 +573,85 @@ export function ResourceTable({ userId, guildId }: ResourceTableProps) {
     const numValue = parseInt(value)
     if (isNaN(numValue)) return
 
+    const resource = resources.find(r => r.id === resourceId)
+    if (!resource) return
+
+    // Calculate the new quantity
+    let newQuantity: number
+    if (type === 'absolute') {
+      newQuantity = Math.max(0, numValue)
+    } else {
+      newQuantity = Math.max(0, resource.quantity + numValue)
+    }
+
+    // Update local state
     handleQuantityChange(resourceId, numValue, type)
     setActiveInput({ resourceId: null, type: null, value: '' })
     
-    // Save immediately for grid view
-    setTimeout(() => saveResource(resourceId), 100)
+    // Save immediately with the calculated values (don't rely on state)
+    setSaving(true)
+    try {
+      const response = await fetch(`/api/resources/${resourceId}`, {
+        method: 'PUT',
+        cache: 'no-store',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache',
+        },
+        body: JSON.stringify({
+          quantity: newQuantity,
+          updateType: type,
+          value: numValue,
+        }),
+      })
+
+      if (response.ok) {
+        const responseData = await response.json()
+        setResources(prev =>
+          prev.map(r =>
+            r.id === resourceId
+              ? {
+                  ...responseData.resource,
+                  updatedAt: new Date(responseData.resource.updatedAt).toISOString(),
+                }
+              : r
+          )
+        )
+        
+        // Show congratulations popup if points were earned
+        if (responseData.pointsEarned > 0) {
+          const currentUserId = session ? getUserIdentifier(session) : userId
+          setCongratulationsState({
+            isVisible: true,
+            pointsEarned: responseData.pointsEarned,
+            pointsCalculation: responseData.pointsCalculation,
+            resourceName: resource.name,
+            actionType: type === 'absolute' ? 'SET' : (numValue > 0 ? 'ADD' : 'REMOVE'),
+            quantityChanged: Math.abs(numValue)
+          })
+        }
+        
+        // Clear the edited resource entry
+        setEditedResources(prev => {
+          const newMap = new Map(prev)
+          newMap.delete(resourceId)
+          return newMap
+        })
+        
+        // Clear status change indicator
+        setStatusChanges(prev => {
+          const newMap = new Map(prev)
+          newMap.delete(resourceId)
+          return newMap
+        })
+      } else {
+        console.error('Failed to save resource:', await response.text())
+      }
+    } catch (error) {
+      console.error('Error saving resource:', error)
+    } finally {
+      setSaving(false)
+    }
   }
 
   // Activate inline input
@@ -720,7 +853,12 @@ export function ResourceTable({ userId, guildId }: ResourceTableProps) {
     try {
       const resource = resources.find(r => r.id === resourceId)
       const updateInfo = editedResources.get(resourceId)
-      if (!resource || !updateInfo) return
+      if (!resource || !updateInfo) {
+        console.log(`[saveResource] Skipping - resource: ${!!resource}, updateInfo: ${!!updateInfo}`)
+        return
+      }
+      
+      console.log(`[saveResource] Saving ${resource.name}: qty=${resource.quantity}, updateType=${updateInfo.updateType}, value=${updateInfo.value}`)
 
       const response = await fetch(`/api/resources/${resourceId}`, {
         method: 'PUT',
@@ -880,7 +1018,7 @@ export function ResourceTable({ userId, guildId }: ResourceTableProps) {
     }
   }
 
-  // Fetch resources on component mount and when guildId or page changes
+  // Fetch resources on component mount and when guildId, page, itemsPerPage, or search changes
   useEffect(() => {
     if (guildId) {
       fetchResources()
@@ -888,7 +1026,7 @@ export function ResourceTable({ userId, guildId }: ResourceTableProps) {
       fetchLeaderboard()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [guildId, currentPage])
+  }, [guildId, currentPage, itemsPerPage, activeSearchTerm])
 
   // Fetch leaderboard when time filter changes
   useEffect(() => {
@@ -898,34 +1036,8 @@ export function ResourceTable({ userId, guildId }: ResourceTableProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leaderboardTimeFilter])
 
-  // Filter resources based on search term and filters
+  // Filter resources based on status and needsUpdate filters (search is now server-side)
   const filteredResources = resources.filter(resource => {
-    const searchLower = searchTerm.toLowerCase()
-    const resourceNameLower = resource.name.toLowerCase()
-    
-    // Text search filter
-    let matchesSearch = true
-    if (searchTerm) {
-      // Exact name match (highest priority)
-      if (resourceNameLower === searchLower) {
-        matchesSearch = true
-      }
-      // Partial name match (high priority)
-      else if (resourceNameLower.includes(searchLower)) {
-        matchesSearch = true
-      }
-      // Extended search: only for longer search terms (6+ characters) to avoid broad matches
-      else if (searchLower.length >= 6) {
-        matchesSearch = (
-          (resource.description?.toLowerCase().includes(searchLower) ?? false) ||
-          (resource.category?.toLowerCase().includes(searchLower) ?? false)
-        )
-      }
-      else {
-        matchesSearch = false
-      }
-    }
-
     // Status filter
     let matchesStatus = true
     if (statusFilter !== 'all') {
@@ -939,11 +1051,11 @@ export function ResourceTable({ userId, guildId }: ResourceTableProps) {
       matchesNeedsUpdate = needsUpdating(resource.updatedAt)
     }
 
-    return matchesSearch && matchesStatus && matchesNeedsUpdate
+    return matchesStatus && matchesNeedsUpdate
   }).sort((a, b) => {
     // If there's a search term, sort by search relevance
-    if (searchTerm) {
-      const searchLower = searchTerm.toLowerCase()
+    if (activeSearchTerm) {
+      const searchLower = activeSearchTerm.toLowerCase()
       const aNameLower = a.name.toLowerCase()
       const bNameLower = b.name.toLowerCase()
       
@@ -1331,17 +1443,39 @@ export function ResourceTable({ userId, guildId }: ResourceTableProps) {
           {/* Search and Filters Row */}
           <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
             {/* Search Bar */}
-            <div className="relative flex-1 max-w-md">
-              <svg className="absolute left-3 top-3 h-4 w-4 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <input
-                type="text"
-                placeholder="Search resources..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              />
+            <div className="relative flex-1 max-w-md flex gap-2">
+              <div className="relative flex-1">
+                <svg className="absolute left-3 top-3 h-4 w-4 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  type="text"
+                  placeholder="Search resources... (press Enter)"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleSearch()
+                    }
+                  }}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                />
+              </div>
+              <button
+                onClick={handleSearch}
+                className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium transition-colors"
+              >
+                Search
+              </button>
+              {activeSearchTerm && (
+                <button
+                  onClick={handleClearSearch}
+                  className="px-3 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-lg font-medium transition-colors"
+                  title="Clear search"
+                >
+                  ✕
+                </button>
+              )}
             </div>
 
             {/* View Toggle Buttons */}
@@ -1988,7 +2122,7 @@ export function ResourceTable({ userId, guildId }: ResourceTableProps) {
 
       {/* Table View */}
       {viewMode === 'table' && (
-        <div className="bg-white dark:bg-stone-900 shadow-lg border border-guildgamesh-300 dark:border-primary-700/40 rounded-lg overflow-hidden border border-guildgamesh-300 dark:border-primary-700/30">
+        <div className="bg-white dark:bg-stone-900 shadow-lg border border-guildgamesh-300 dark:border-primary-700/40 rounded-lg border border-guildgamesh-300 dark:border-primary-700/30">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-sand-200 dark:divide-primary-700/30">
               <thead className="bg-gray-50 dark:bg-gray-900">
@@ -2125,8 +2259,8 @@ export function ResourceTable({ userId, guildId }: ResourceTableProps) {
                         </td>
                       )}
 
-                                              <td className="px-3 py-3 whitespace-nowrap text-sm" onClick={(e) => e.stopPropagation()}>
-                        <div className="space-y-2">
+                                              <td className={`px-3 py-3 text-sm ${editingResource === resource.id ? '' : 'whitespace-nowrap'}`} onClick={(e) => e.stopPropagation()}>
+                        <div className={editingResource === resource.id ? "space-y-2 min-w-[200px]" : "space-y-2"}>
                           {/* Input field and buttons */}
                           {activeInput.resourceId === resource.id ? (
                             <div className="space-y-2">
@@ -2166,7 +2300,7 @@ export function ResourceTable({ userId, guildId }: ResourceTableProps) {
                             </div>
                           ) : editingResource === resource.id ? (
                             // Admin edit form for table view
-                            <div className="space-y-2 w-48">
+                            <div className="space-y-2">
                               <input
                                 type="text"
                                 value={editResourceForm.name}
@@ -2404,12 +2538,24 @@ export function ResourceTable({ userId, guildId }: ResourceTableProps) {
             </button>
           </div>
           <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
-            <div>
+            <div className="flex items-center gap-4">
               <p className="text-sm text-gray-700 dark:text-gray-300">
                 Showing <span className="font-medium">{((currentPage - 1) * itemsPerPage) + 1}</span> to{' '}
                 <span className="font-medium">{Math.min(currentPage * itemsPerPage, totalCount)}</span> of{' '}
                 <span className="font-medium">{totalCount}</span> resources
               </p>
+              <select
+                value={itemsPerPage}
+                onChange={(e) => {
+                  setItemsPerPage(Number(e.target.value))
+                  setCurrentPage(1)
+                }}
+                className="text-sm border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300"
+                title="Items per page"
+              >
+                <option value={25}>25 per page</option>
+                <option value={50}>50 per page</option>
+              </select>
             </div>
             <div>
               <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">

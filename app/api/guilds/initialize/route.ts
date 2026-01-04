@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, resources, resourceHistory, leaderboard, discordOrders, resourceDiscordMapping, websiteChanges, botActivityLogs } from '@/lib/db'
+import { db, resources, resourceHistory, leaderboard, discordOrders, resourceDiscordMapping, websiteChanges, botActivityLogs, guilds } from '@/lib/db'
 import { eq, inArray, isNotNull } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 
 // Standard 95 resources template (Dune: Awakening)
 const STANDARD_RESOURCES = [
@@ -118,9 +120,58 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // If reset=true, we need to verify the user has permission (owner/admin/superadmin)
+    if (reset) {
+      const session = await getServerSession(authOptions)
+      if (!session?.user?.id) {
+        return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+      }
+
+      // Get the guild's Discord server ID
+      const guildData = await db.select({ discordGuildId: guilds.discordGuildId })
+        .from(guilds)
+        .where(eq(guilds.id, guildId))
+        .limit(1)
+
+      if (!guildData.length || !guildData[0].discordGuildId) {
+        return NextResponse.json({ error: 'Guild not found' }, { status: 404 })
+      }
+
+      const discordGuildId = guildData[0].discordGuildId
+
+      // Fetch user's Discord servers to check permissions
+      const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000'
+      const discordServersResponse = await fetch(`${baseUrl}/api/discord/user-servers`, {
+        headers: {
+          Cookie: request.headers.get('cookie') || ''
+        }
+      })
+
+      if (!discordServersResponse.ok) {
+        return NextResponse.json({ error: 'Failed to verify permissions' }, { status: 500 })
+      }
+
+      const { servers: discordServers } = await discordServersResponse.json()
+      const discordServer = discordServers.find((s: any) => s.id === discordGuildId)
+
+      // Check if user is super admin
+      const superAdminUserId = process.env.SUPER_ADMIN_USER_ID
+      const isSuperAdmin = superAdminUserId && session.user.id === superAdminUserId
+
+      // Allow: Discord server owner, Discord admin (ADMINISTRATOR permission), or super admin
+      if (!discordServer || (!discordServer.isOwner && !discordServer.isAdmin && !isSuperAdmin)) {
+        return NextResponse.json({ 
+          error: 'Only Discord server owners/admins can reset guilds' 
+        }, { status: 403 })
+      }
+
+      console.log(`[INIT] RESET MODE: Deleting all existing data for guild: ${guildTitle || guildId}`)
+    } else {
+      console.log(`[INIT] Creating resources for guild: ${guildTitle || guildId}`)
+    }
+
     // If reset=true, delete all existing data for this guild first
     if (reset) {
-      console.log(`[INIT] RESET MODE: Deleting all existing data for guild: ${guildTitle || guildId}`)
       
       // First, get all resource IDs for this guild (needed for tables without guildId)
       const guildResources = await db.select({ id: resources.id })
@@ -276,7 +327,7 @@ export async function POST(request: NextRequest) {
       icon: resource.icon,
       imageUrl: resource.imageUrl || null,
       status: 'critical',
-      targetQuantity: 1000,
+      targetQuantity: 10000,
       multiplier: resource.multiplier,
       lastUpdatedBy: 'System',
       createdAt: new Date(),

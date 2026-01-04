@@ -17,6 +17,29 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    // Check for super admin - they get ALL guilds
+    const superAdminUserId = process.env.SUPER_ADMIN_USER_ID
+    const isSuperAdmin = session.user.id === superAdminUserId
+    
+    if (isSuperAdmin) {
+      console.log('[GUILDS API] Super admin access - returning ALL guilds')
+      const allGuilds = await db.select().from(guilds).all()
+      return NextResponse.json(
+        { guilds: allGuilds.map(g => ({
+          id: g.id,
+          title: g.title,
+          maxMembers: g.maxMembers,
+          leaderId: g.leaderId,
+          discordGuildId: g.discordGuildId
+        })) },
+        {
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+          }
+        }
+      )
+    }
+
     // Use Discord servers from session (already fetched during login) to avoid rate limits
     const userDiscordServers = session.user.allServerIds || []
     console.log('[GUILDS API] User Discord servers from session:', userDiscordServers.length, userDiscordServers)
@@ -48,21 +71,24 @@ export async function GET(request: NextRequest) {
       
       // Check if user is owner/admin of this Discord server (use session data to avoid rate limits)
       const isDiscordServerOwner = session.user.ownedServerIds?.includes(discordServerId) || false
-      console.log('[GUILDS API] Discord server ownership check:', { discordServerId, isDiscordServerOwner })
+      // Check if user has Discord ADMINISTRATOR permission in this server
+      const isDiscordAdmin = session.user.adminServerIds?.includes(discordServerId) || false
+      console.log('[GUILDS API] Discord server ownership/admin check:', { discordServerId, isDiscordServerOwner, isDiscordAdmin })
       
       // Get user's roles for THIS specific Discord server
       const userRolesForServer = session.user.serverRolesMap?.[discordServerId] || []
       
       // Calculate hasGlobalAccess for THIS specific Discord server
+      // Discord ADMINs (ADMINISTRATOR permission) get global access
       const { hasResourceAdminAccess } = await import('@/lib/discord-roles')
-      const hasGlobalAccess = hasResourceAdminAccess(userRolesForServer, isDiscordServerOwner)
+      const hasGlobalAccess = isDiscordAdmin || hasResourceAdminAccess(userRolesForServer, isDiscordServerOwner)
       
       // Get accessible guild IDs based on role requirements for THIS server
       const accessibleGuildIds = await getAccessibleGuilds(discordServerId, userRolesForServer, userDiscordId, isDiscordServerOwner, hasGlobalAccess)
       
       if (accessibleGuildIds.length === 0) {
         console.log('[GUILDS API] User has no accessible guilds in Discord server:', discordServerId)
-        return NextResponse.json([], {
+        return NextResponse.json({ guilds: [] }, {
           headers: {
             'Cache-Control': 'no-cache, no-store, must-revalidate',
           }
@@ -75,7 +101,7 @@ export async function GET(request: NextRequest) {
       // Return only guilds linked to Discord servers the user is a member of
       if (userDiscordServers.length === 0) {
         console.warn('[GUILDS API] No Discord servers found for user, returning empty array')
-        return NextResponse.json([], {
+        return NextResponse.json({ guilds: [] }, {
           headers: {
             'Cache-Control': 'no-cache, no-store, must-revalidate',
           }
@@ -89,7 +115,9 @@ export async function GET(request: NextRequest) {
       
       // Use server ownership from session to avoid rate limits
       const ownedServerIds = session.user.ownedServerIds || []
+      const adminServerIds = session.user.adminServerIds || []  // Servers where user has ADMINISTRATOR permission
       console.log('[GUILDS API] User owned servers from session:', ownedServerIds.length)
+      console.log('[GUILDS API] User admin servers (ADMINISTRATOR) from session:', adminServerIds.length)
       
       // Filter by role-based access
       const accessibleGuildIds = new Set<string>()
@@ -97,13 +125,16 @@ export async function GET(request: NextRequest) {
       
       for (const discordId of userDiscordServers) {
         const isDiscordServerOwner = ownedServerIds.includes(discordId)
+        const isDiscordAdmin = adminServerIds.includes(discordId)  // Has ADMINISTRATOR permission
         const serverRoles = session.user.serverRolesMap?.[discordId] || []
         
         // Calculate hasGlobalAccess for THIS specific Discord server
-        const hasGlobalAccess = hasResourceAdminAccess(serverRoles, isDiscordServerOwner)
+        // Discord ADMINs (ADMINISTRATOR permission) get global access
+        const hasGlobalAccess = isDiscordAdmin || hasResourceAdminAccess(serverRoles, isDiscordServerOwner)
         
         console.log(`[GUILDS API] Checking access for server ${discordId}:`, {
           isOwner: isDiscordServerOwner,
+          isAdmin: isDiscordAdmin,
           roles: serverRoles,
           userDiscordId,
           hasGlobalAccess
@@ -121,13 +152,13 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json(
-      allGuilds.map(g => ({
+      { guilds: allGuilds.map(g => ({
         id: g.id,
         title: g.title,
         maxMembers: g.maxMembers,
         leaderId: g.leaderId,
         discordGuildId: g.discordGuildId
-      })),
+      })) },
       {
         headers: {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
