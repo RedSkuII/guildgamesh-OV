@@ -251,7 +251,79 @@ export async function getAccessibleGuilds(
   }
 }
 /**
- * Check if user can manage (create/edit/delete) resources for a specific guild
+ * Check if user can UPDATE resource quantities for a specific guild (any guild member)
+ * This is different from canManageGuildResources which is for metadata changes (leader/officer only)
+ * @param guildId - The in-game guild ID (e.g., 'house-melange')
+ * @param userRoles - Array of user's Discord role IDs
+ * @param hasGlobalAdmin - Whether user has global resource admin access
+ * @returns Promise<boolean> - True if user can update resource quantities
+ */
+export async function canUpdateGuildResources(
+  guildId: string,
+  userRoles: string[],
+  hasGlobalAdmin: boolean = false
+): Promise<boolean> {
+  try {
+    // Global admins can update all guilds
+    if (hasGlobalAdmin) {
+      return true
+    }
+
+    // Fetch guild configuration
+    const guildData = await db
+      .select()
+      .from(guilds)
+      .where(eq(guilds.id, guildId))
+      .limit(1)
+
+    if (guildData.length === 0) {
+      console.warn(`[GUILD-ACCESS] Guild not found for update check: ${guildId}`)
+      return false
+    }
+
+    const guild = guildData[0]
+
+    // Check ALL guild roles - member, officer, leader can all update quantities
+    const guildRoles = [
+      guild.discordRoleId,        // Member role
+      guild.discordOfficerRoleId,  // Officer role
+      guild.discordLeaderRoleId    // Leader role
+    ].filter(Boolean) as string[]
+
+    // Also check admin roles
+    if (guild.adminRoleId) {
+      try {
+        const adminRoles = JSON.parse(guild.adminRoleId)
+        guildRoles.push(...adminRoles)
+      } catch {
+        guildRoles.push(guild.adminRoleId)
+      }
+    }
+
+    if (guildRoles.length === 0) {
+      console.log(`[GUILD-ACCESS] ✗ No roles configured for "${guild.title}"`)
+      return false
+    }
+
+    const hasGuildRole = guildRoles.some(roleId => userRoles.includes(roleId))
+
+    if (hasGuildRole) {
+      console.log(`[GUILD-ACCESS] ✓ User can update resources for "${guild.title}"`)
+    } else {
+      console.log(`[GUILD-ACCESS] ✗ User cannot update resources for "${guild.title}"`)
+    }
+
+    return hasGuildRole
+
+  } catch (error) {
+    console.error('[GUILD-ACCESS] Error checking guild update access:', error)
+    return false
+  }
+}
+
+/**
+ * Check if user can MANAGE (create/edit metadata/delete) resources for a specific guild
+ * This requires leader, officer, or admin role - regular members cannot manage
  * @param guildId - The in-game guild ID (e.g., 'house-melange')
  * @param userRoles - Array of user's Discord role IDs
  * @param hasGlobalAdmin - Whether user has global resource admin access

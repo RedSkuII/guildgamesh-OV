@@ -183,7 +183,8 @@ const CATEGORY_OPTIONS = ['Raw', 'Refined', 'Components', 'Other']
 
 // Guild permissions interface
 interface GuildPermissions {
-  canManageResources: boolean
+  canUpdateResources: boolean  // Any guild member can update quantities
+  canManageResources: boolean  // Leaders/officers can edit metadata
   canEditTargets: boolean
   isLeader: boolean
   isOfficer: boolean
@@ -204,7 +205,10 @@ export function ResourceTable({ userId, guildId }: ResourceTableProps) {
   // Guild-specific permissions (fetched from API)
   const [guildPermissions, setGuildPermissions] = useState<GuildPermissions | null>(null)
   
-  // Effective permission: global admin OR guild-specific leader/officer
+  // Effective permissions:
+  // - canUpdateQuantities: Any guild member can update quantities (global admin OR guild member)
+  // - isResourceAdmin: Only leader/officer can edit metadata (global admin OR leader/officer)
+  const canUpdateQuantities = globalResourceAdmin || guildPermissions?.canUpdateResources || false
   const isResourceAdmin = globalResourceAdmin || guildPermissions?.canManageResources || false
   
 
