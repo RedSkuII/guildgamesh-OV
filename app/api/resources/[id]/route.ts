@@ -116,6 +116,10 @@ export async function PUT(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  // Check if user is super admin - they bypass all permission checks
+  const superAdminUserId = process.env.SUPER_ADMIN_USER_ID
+  const isSuperAdmin = superAdminUserId && session.user.id === superAdminUserId
+
   try {
     const { quantity, updateType = 'absolute', value, reason } = await request.json()
     const userId = getUserIdentifier(session)
@@ -126,9 +130,9 @@ export async function PUT(
       return NextResponse.json({ error: 'Resource not found' }, { status: 404 })
     }
 
-    // Verify user has access to the resource's guild
+    // Verify user has access to the resource's guild (super admins bypass this)
     const resource = currentResource[0]
-    if (resource.guildId) {
+    if (resource.guildId && !isSuperAdmin) {
       const discordToken = (session as any).accessToken
       if (discordToken) {
         const discordResponse = await fetch('https://discord.com/api/users/@me/guilds', {
