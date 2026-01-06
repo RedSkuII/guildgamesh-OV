@@ -265,6 +265,10 @@ export async function DELETE(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  // Check if user is super admin - they bypass all permission checks
+  const superAdminUserId = process.env.SUPER_ADMIN_USER_ID
+  const isSuperAdmin = superAdminUserId && session.user.id === superAdminUserId
+
   try {
     // Get the resource first to check guild access
     const resource = await db.select().from(resources).where(eq(resources.id, params.id)).limit(1)
@@ -273,8 +277,8 @@ export async function DELETE(
       return NextResponse.json({ error: 'Resource not found' }, { status: 404 })
     }
     
-    // Verify user has access to the resource's guild
-    if (resource[0].guildId) {
+    // Verify user has access to the resource's guild (super admins bypass)
+    if (resource[0].guildId && !isSuperAdmin) {
       const discordToken = (session as any).accessToken
       if (discordToken) {
         const discordResponse = await fetch('https://discord.com/api/users/@me/guilds', {

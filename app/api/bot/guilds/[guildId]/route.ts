@@ -19,8 +19,12 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Check if user has bot admin access
-    if (!hasBotAdminAccess(session.user.roles)) {
+    // Check if user is super admin - they bypass all permission checks
+    const superAdminUserId = process.env.SUPER_ADMIN_USER_ID
+    const isSuperAdmin = superAdminUserId && session.user.id === superAdminUserId
+
+    // Check if user has bot admin access (super admins bypass)
+    if (!isSuperAdmin && !hasBotAdminAccess(session.user.roles)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
 

@@ -18,13 +18,19 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Check if user is a server owner
-    const { isDiscordServerOwner } = await import('@/lib/discord-roles')
-    const isOwner = isDiscordServerOwner(session)
+    // Check if user is super admin - they bypass all permission checks
+    const superAdminUserId = process.env.SUPER_ADMIN_USER_ID
+    const isSuperAdmin = superAdminUserId && session.user.id === superAdminUserId
 
-    const userRoles = session.user.roles || []
-    if (!hasResourceAdminAccess(userRoles, isOwner)) {
-      return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+    if (!isSuperAdmin) {
+      // Check if user is a server owner
+      const { isDiscordServerOwner } = await import('@/lib/discord-roles')
+      const isOwner = isDiscordServerOwner(session)
+
+      const userRoles = session.user.roles || []
+      if (!hasResourceAdminAccess(userRoles, isOwner)) {
+        return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+      }
     }
 
     const resourceId = params.id

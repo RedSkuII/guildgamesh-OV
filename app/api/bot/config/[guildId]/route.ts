@@ -49,11 +49,15 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    // Check if user is super admin - they bypass all permission checks
+    const superAdminUserId = process.env.SUPER_ADMIN_USER_ID
+    const isSuperAdmin = superAdminUserId && session.user.id === superAdminUserId
+
     const { guildId } = params
 
-    // Check if user has bot admin access OR owns this Discord server
+    // Check if user has bot admin access OR owns this Discord server (super admins bypass)
     const isOwner = session.user.ownedServerIds?.includes(guildId) || false
-    if (!hasBotAdminAccess(session.user.roles, isOwner)) {
+    if (!isSuperAdmin && !hasBotAdminAccess(session.user.roles, isOwner)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
 
@@ -181,11 +185,15 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    // Check if user is super admin - they bypass all permission checks
+    const superAdminUserId = process.env.SUPER_ADMIN_USER_ID
+    const isSuperAdmin = superAdminUserId && session.user.id === superAdminUserId
+
     const { guildId } = params
 
-    // Check if user has bot admin access OR owns this Discord server
+    // Check if user has bot admin access OR owns this Discord server (super admins bypass)
     const isOwner = session.user.ownedServerIds?.includes(guildId) || false
-    if (!hasBotAdminAccess(session.user.roles, isOwner)) {
+    if (!isSuperAdmin && !hasBotAdminAccess(session.user.roles, isOwner)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
 

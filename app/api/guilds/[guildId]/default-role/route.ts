@@ -15,8 +15,19 @@ export async function PUT(
   try {
     const session = await getServerSession(authOptions)
 
-    // Check if user is authenticated and has admin access
-    if (!session || !session.user.permissions?.hasResourceAdminAccess) {
+    if (!session) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
+    // Check if user is super admin - they bypass all permission checks
+    const superAdminUserId = process.env.SUPER_ADMIN_USER_ID
+    const isSuperAdmin = superAdminUserId && session.user.id === superAdminUserId
+
+    // Check if user is authenticated and has admin access (super admins bypass)
+    if (!isSuperAdmin && !session.user.permissions?.hasResourceAdminAccess) {
       return NextResponse.json(
         { error: 'Unauthorized - Admin access required' },
         { status: 401 }

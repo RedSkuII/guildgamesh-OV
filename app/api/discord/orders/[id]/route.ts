@@ -20,7 +20,18 @@ export async function PATCH(
   try {
     const session = await getServerSession(authOptions);
     
-    if (!session || !hasResourceAdminAccess(session.user.roles)) {
+    if (!session) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    // Check if user is super admin - they bypass all permission checks
+    const superAdminUserId = process.env.SUPER_ADMIN_USER_ID;
+    const isSuperAdmin = superAdminUserId && session.user.id === superAdminUserId;
+
+    if (!isSuperAdmin && !hasResourceAdminAccess(session.user.roles)) {
       return NextResponse.json(
         { error: 'Unauthorized - requires resource admin access' },
         { status: 401 }

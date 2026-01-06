@@ -21,11 +21,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized - Please sign in' }, { status: 401 })
     }
 
-    // Check if user has bot admin access
+    // Check if user is super admin - they bypass all permission checks
+    const superAdminUserId = process.env.SUPER_ADMIN_USER_ID
+    const isSuperAdmin = superAdminUserId && session.user.id === superAdminUserId
+    console.log('[BOT-GUILDS] Is super admin:', isSuperAdmin)
+
+    // Check if user has bot admin access (super admins bypass)
     const roles = Array.isArray(session.user.roles) ? session.user.roles : []
     console.log('[BOT-GUILDS] Checking permissions with roles:', roles)
     
-    const hasAccess = hasBotAdminAccess(roles)
+    const hasAccess = isSuperAdmin || hasBotAdminAccess(roles)
     console.log('[BOT-GUILDS] Has bot admin access:', hasAccess)
     
     if (!hasAccess) {
