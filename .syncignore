@@ -1,0 +1,63 @@
+# Files and patterns to EXCLUDE from test → live sync
+# Used by sync-to-live.ps1 script
+
+# Environment files (contain secrets)
+.env
+.env.local
+.env.production
+
+# Local database files
+local.db
+local.db-shm
+local.db-wal
+*.db
+*.db-journal
+
+# Build artifacts and dependencies
+node_modules/
+.next/
+.vercel/
+dist/
+build/
+
+# Version control
+.git/
+.gitignore
+
+# Sync/deployment tools (test environment only)
+sync-to-live.ps1
+DEPLOYMENT_CHECKLIST.md
+.syncignore
+
+# Test files (not needed in production)
+full-test.js
+setup-local-db.js
+test-db.js
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
