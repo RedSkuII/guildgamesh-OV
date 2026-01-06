@@ -33,6 +33,10 @@ export async function GET(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  // Check if user is super admin - they bypass all permission checks
+  const superAdminUserId = process.env.SUPER_ADMIN_USER_ID
+  const isSuperAdmin = superAdminUserId && session.user.id === superAdminUserId
+
   try {
     // Get the resource with username lookup
     const resourceData = await db
@@ -63,8 +67,8 @@ export async function GET(
 
     const resource = resourceData[0]
 
-    // Verify user has access to the resource's guild
-    if (resource.guildId) {
+    // Verify user has access to the resource's guild (super admins bypass this)
+    if (resource.guildId && !isSuperAdmin) {
       const discordToken = (session as any).accessToken
       if (discordToken) {
         const discordResponse = await fetch('https://discord.com/api/users/@me/guilds', {
