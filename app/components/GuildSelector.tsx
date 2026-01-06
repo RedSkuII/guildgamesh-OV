@@ -14,9 +14,17 @@ interface GuildSelectorProps {
   selectedGuildId: string | null
   onGuildChange: (guildId: string) => void
   hasLoadedFromStorage?: boolean
+  showAllOption?: boolean  // Whether to show "All Guilds" option
+  allOptionLabel?: string  // Custom label for "All Guilds" option
 }
 
-export default function GuildSelector({ selectedGuildId, onGuildChange, hasLoadedFromStorage = false }: GuildSelectorProps) {
+export default function GuildSelector({ 
+  selectedGuildId, 
+  onGuildChange, 
+  hasLoadedFromStorage = false,
+  showAllOption = false,
+  allOptionLabel = 'All My Guilds'
+}: GuildSelectorProps) {
   const { data: session, status } = useSession()
   const [guilds, setGuilds] = useState<Guild[]>([])
   const [loading, setLoading] = useState(true)
@@ -108,6 +116,21 @@ export default function GuildSelector({ selectedGuildId, onGuildChange, hasLoade
     )
   }
 
+  // If user only has one guild and we don't need to show "All" option, just display the guild name
+  if (guilds.length === 1 && !showAllOption) {
+    return (
+      <div className="flex items-center gap-3">
+        <span className="text-sm font-medium text-gray-300">In-Game Guild:</span>
+        <span className="px-4 py-2 rounded-lg bg-gray-700 text-white font-medium">
+          {guilds[0].title}
+        </span>
+      </div>
+    )
+  }
+
+  // Determine if we should show the "All" option (only if user has multiple guilds)
+  const shouldShowAllOption = showAllOption && guilds.length > 1
+
   return (
     <div className="flex items-center gap-3">
       <label htmlFor="guild-selector" className="text-sm font-medium text-gray-300">
@@ -115,10 +138,13 @@ export default function GuildSelector({ selectedGuildId, onGuildChange, hasLoade
       </label>
       <select
         id="guild-selector"
-        value={selectedGuildId && guilds.some(g => g.id === selectedGuildId) ? selectedGuildId : (guilds[0]?.id || '')}
+        value={selectedGuildId === 'all' ? 'all' : (selectedGuildId && guilds.some(g => g.id === selectedGuildId) ? selectedGuildId : (guilds[0]?.id || ''))}
         onChange={(e) => onGuildChange(e.target.value)}
         className="rounded-lg border border-gray-600 bg-gray-700 px-4 py-2 text-white shadow-sm focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
       >
+        {shouldShowAllOption && (
+          <option value="all">{allOptionLabel}</option>
+        )}
         {guilds.map((guild) => (
           <option key={guild.id} value={guild.id}>
             {guild.title}

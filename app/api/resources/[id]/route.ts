@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions, getUserIdentifier } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { resources, resourceHistory, leaderboard, websiteChanges, users } from '@/lib/db'
+import { resources, resourceHistory, leaderboard, websiteChanges, users, guilds } from '@/lib/db'
 import { eq, sql } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
-import { hasResourceAccess, hasResourceAdminAccess } from '@/lib/discord-roles'
+import { hasResourceAccess, hasResourceAdminAccess, isDiscordServerOwner } from '@/lib/discord-roles'
 import { awardPoints } from '@/lib/leaderboard'
+import { canAccessGuild } from '@/lib/guild-access'
 
 // Calculate status based on quantity vs target
 const calculateResourceStatus = (quantity: number, targetQuantity: number | null): 'above_target' | 'at_target' | 'below_target' | 'critical' => {
@@ -69,30 +70,25 @@ export async function GET(
 
     // Verify user has access to the resource's guild (super admins bypass this)
     if (resource.guildId && !isSuperAdmin) {
-      const discordToken = (session as any).accessToken
-      if (discordToken) {
-        const discordResponse = await fetch('https://discord.com/api/users/@me/guilds', {
-          headers: { 'Authorization': `Bearer ${discordToken}` },
-        })
-        if (discordResponse.ok) {
-          const servers = await discordResponse.json()
-          const userDiscordServers = servers.map((server: any) => server.id)
-          const { guilds } = await import('@/lib/db')
-          const guild = await db.select().from(guilds).where(eq(guilds.id, resource.guildId!)).limit(1)
-          
-          if (guild.length === 0 || !guild[0].discordGuildId || !userDiscordServers.includes(guild[0].discordGuildId)) {
-            return NextResponse.json({ error: 'Access denied to this guild' }, { status: 403 })
-          }
-          
-          // Check resource access for THIS specific Discord server
-          const { isDiscordServerOwner } = await import('@/lib/discord-roles')
-          const discordServerId = guild[0].discordGuildId
-          const isOwner = isDiscordServerOwner(session, discordServerId)
-          
-          if (!hasResourceAccess(session.user.roles, isOwner)) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-          }
-        }
+      // Use session data for guild verification - no Discord API calls needed
+      const userDiscordServers = session.user.allServerIds || []
+      const guild = await db.select().from(guilds).where(eq(guilds.id, resource.guildId!)).limit(1)
+      
+      if (guild.length === 0 || !guild[0].discordGuildId || !userDiscordServers.includes(guild[0].discordGuildId)) {
+        return NextResponse.json({ error: 'Access denied to this guild' }, { status: 403 })
+      }
+      
+      // Check resource access for THIS specific Discord server
+      const discordServerId = guild[0].discordGuildId
+      const serverRoles = session.user.serverRolesMap?.[discordServerId] || []
+      const isOwner = isDiscordServerOwner(session, discordServerId)
+      const hasGlobalAccess = hasResourceAccess(serverRoles, isOwner)
+      
+      // Check guild-specific permissions
+      const canAccess = await canAccessGuild(resource.guildId, serverRoles, hasGlobalAccess)
+      
+      if (!canAccess) {
+        return NextResponse.json({ error: 'You must be a guild member to view this resource' }, { status: 403 })
       }
     }
 
@@ -137,36 +133,27 @@ export async function PUT(
     // Verify user has access to the resource's guild (super admins bypass this)
     const resource = currentResource[0]
     if (resource.guildId && !isSuperAdmin) {
-      const discordToken = (session as any).accessToken
-      if (discordToken) {
-        const discordResponse = await fetch('https://discord.com/api/users/@me/guilds', {
-          headers: { 'Authorization': `Bearer ${discordToken}` },
-        })
-        if (discordResponse.ok) {
-          const servers = await discordResponse.json()
-          const userDiscordServers = servers.map((server: any) => server.id)
-          const { guilds } = await import('@/lib/db')
-          const guild = await db.select().from(guilds).where(eq(guilds.id, resource.guildId!)).limit(1)
-          
-          if (guild.length === 0 || !guild[0].discordGuildId || !userDiscordServers.includes(guild[0].discordGuildId)) {
-            return NextResponse.json({ error: 'Access denied to this guild' }, { status: 403 })
-          }
-          
-          // Check resource access for THIS specific Discord server
-          const { isDiscordServerOwner } = await import('@/lib/discord-roles')
-          const discordServerId = guild[0].discordGuildId
-          const isOwner = isDiscordServerOwner(session, discordServerId)
-          const hasGlobalAccess = hasResourceAccess(session.user.roles, isOwner)
-          
-          // Check guild-specific permissions (any guild member can update quantities)
-          const { canUpdateGuildResources } = await import('@/lib/guild-access')
-          const canUpdate = await canUpdateGuildResources(resource.guildId!, session.user.roles, hasGlobalAccess)
-          
-          if (!canUpdate) {
-            console.log(`[API PUT /api/resources/${params.id}] User ${session.user.name} denied - not a member of guild ${resource.guildId}`)
-            return NextResponse.json({ error: 'You must be a guild member to update resources' }, { status: 401 })
-          }
-        }
+      // Use session data for guild verification - no Discord API calls needed
+      const userDiscordServers = session.user.allServerIds || []
+      const guild = await db.select().from(guilds).where(eq(guilds.id, resource.guildId!)).limit(1)
+      
+      if (guild.length === 0 || !guild[0].discordGuildId || !userDiscordServers.includes(guild[0].discordGuildId)) {
+        return NextResponse.json({ error: 'Access denied to this guild' }, { status: 403 })
+      }
+      
+      // Check resource access for THIS specific Discord server
+      const discordServerId = guild[0].discordGuildId
+      const serverRoles = session.user.serverRolesMap?.[discordServerId] || []
+      const isOwner = isDiscordServerOwner(session, discordServerId)
+      const hasGlobalAccess = hasResourceAccess(serverRoles, isOwner)
+      
+      // Check guild-specific permissions (any guild member can update quantities)
+      const { canUpdateGuildResources } = await import('@/lib/guild-access')
+      const canUpdate = await canUpdateGuildResources(resource.guildId!, serverRoles, hasGlobalAccess)
+      
+      if (!canUpdate) {
+        console.log(`[API PUT /api/resources/${params.id}] User ${session.user.name} denied - not a member of guild ${resource.guildId}`)
+        return NextResponse.json({ error: 'You must be a guild member to update resources' }, { status: 401 })
       }
     }
 
@@ -279,30 +266,21 @@ export async function DELETE(
     
     // Verify user has access to the resource's guild (super admins bypass)
     if (resource[0].guildId && !isSuperAdmin) {
-      const discordToken = (session as any).accessToken
-      if (discordToken) {
-        const discordResponse = await fetch('https://discord.com/api/users/@me/guilds', {
-          headers: { 'Authorization': `Bearer ${discordToken}` },
-        })
-        if (discordResponse.ok) {
-          const servers = await discordResponse.json()
-          const userDiscordServers = servers.map((server: any) => server.id)
-          const { guilds } = await import('@/lib/db')
-          const guild = await db.select().from(guilds).where(eq(guilds.id, resource[0].guildId!)).limit(1)
-          
-          if (guild.length === 0 || !guild[0].discordGuildId || !userDiscordServers.includes(guild[0].discordGuildId)) {
-            return NextResponse.json({ error: 'Access denied to this guild' }, { status: 403 })
-          }
-          
-          // Check admin access for THIS specific Discord server
-          const { isDiscordServerOwner } = await import('@/lib/discord-roles')
-          const discordServerId = guild[0].discordGuildId
-          const isOwner = isDiscordServerOwner(session, discordServerId)
-          
-          if (!hasResourceAdminAccess(session.user.roles, isOwner)) {
-            return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
-          }
-        }
+      // Use session data for guild verification - no Discord API calls needed
+      const userDiscordServers = session.user.allServerIds || []
+      const guild = await db.select().from(guilds).where(eq(guilds.id, resource[0].guildId!)).limit(1)
+      
+      if (guild.length === 0 || !guild[0].discordGuildId || !userDiscordServers.includes(guild[0].discordGuildId)) {
+        return NextResponse.json({ error: 'Access denied to this guild' }, { status: 403 })
+      }
+      
+      // Check admin access for THIS specific Discord server
+      const discordServerId = guild[0].discordGuildId
+      const serverRoles = session.user.serverRolesMap?.[discordServerId] || []
+      const isOwner = isDiscordServerOwner(session, discordServerId)
+      
+      if (!hasResourceAdminAccess(serverRoles, isOwner)) {
+        return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
       }
     }
 
