@@ -331,14 +331,16 @@ export async function PUT(request: NextRequest) {
           const serverRoles = session.user.serverRolesMap?.[discordServerId] || []
           const isOwner = isDiscordServerOwner(session, discordServerId)
           
-          // Second check: User must have resource access permission for THIS server
-          if (!hasResourceAccess(serverRoles, isOwner)) {
+          // Second check: User must have resource access permission
+          // Use pre-computed permission from session OR check server-specific roles
+          const hasGlobalResourceAccess = session.user.permissions?.hasResourceAccess || false
+          if (!hasGlobalResourceAccess && !hasResourceAccess(serverRoles, isOwner)) {
             console.log(`[API PUT /api/resources] User ${session.user.name} lacks resource access for Discord server ${discordServerId}`)
             return NextResponse.json({ error: 'You do not have resource access permissions' }, { status: 403 })
           }
           
           // Third check: User must have guild-specific role access (Member/Officer/Leader)
-          const hasGlobalAccess = hasResourceAccess(serverRoles, isOwner)
+          const hasGlobalAccess = hasGlobalResourceAccess || hasResourceAccess(serverRoles, isOwner)
           const canAccess = await canAccessGuild(guild.id, serverRoles, hasGlobalAccess)
           if (!canAccess) {
             console.log(`[API PUT /api/resources] User ${session.user.name} denied access to guild ${guild.id} - lacks guild membership role`)
