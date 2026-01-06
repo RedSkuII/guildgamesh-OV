@@ -39,11 +39,12 @@ export async function GET(
   const isSuperAdmin = superAdminUserId && session.user.id === superAdminUserId
 
   try {
-    // Get the resource with username lookup
+    // Get the resource with username lookup and guild info
     const resourceData = await db
       .select({
         id: resources.id,
         guildId: resources.guildId,
+        guildName: guilds.title, // Include guild name for display
         name: resources.name,
         quantity: resources.quantity,
         description: resources.description,
@@ -59,6 +60,7 @@ export async function GET(
       })
       .from(resources)
       .leftJoin(users, eq(resources.lastUpdatedBy, users.discordId))
+      .leftJoin(guilds, eq(resources.guildId, guilds.id))
       .where(eq(resources.id, params.id))
       .limit(1)
     

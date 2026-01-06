@@ -72,6 +72,8 @@ interface Resource {
   lastUpdatedBy: string
   createdAt: string
   updatedAt: string
+  guildId?: string
+  guildName?: string
 }
 
 export default function ResourceDetailPage() {
@@ -463,6 +465,15 @@ export default function ResourceDetailPage() {
   const status = calculateResourceStatus(resource.quantity, resource.targetQuantity || null)
   const percentage = resource.targetQuantity ? Math.round((resource.quantity / resource.targetQuantity) * 100) : null
 
+  // Handle "Back to Resources" with guild context
+  const handleBackToResources = () => {
+    // If we have a stored guild context, set it for the resources page
+    if (resource.guildId) {
+      localStorage.setItem('lastSelectedGuildId', resource.guildId)
+    }
+    router.push('/resources')
+  }
+
   const getCategoryColor = (category: string) => {
     switch (category) {
       case 'Raw': return 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200'
@@ -489,7 +500,7 @@ export default function ResourceDetailPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <button
-              onClick={() => router.push('/resources')}
+              onClick={handleBackToResources}
               className="flex items-center text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 transition-colors"
             >
               <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -497,7 +508,12 @@ export default function ResourceDetailPage() {
               </svg>
               Back to Resources
             </button>
-            <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Resource Details</h1>
+            <div className="text-center">
+              <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Resource Details</h1>
+              {resource.guildName && (
+                <p className="text-sm text-gray-500 dark:text-gray-400">{resource.guildName}</p>
+              )}
+            </div>
             <div></div>
           </div>
         </div>

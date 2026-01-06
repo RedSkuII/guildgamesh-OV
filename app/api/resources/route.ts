@@ -36,17 +36,31 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '25', 10)
     const search = searchParams.get('search') || ''
     
-    // Quick auth check - just verify user is logged in
-    // Detailed permission checks are done at page level, not per-request
+    // Always require authentication for resource access
+    const { getServerSession } = await import('next-auth')
+    const { authOptions } = await import('@/lib/auth')
+    const session = await getServerSession(authOptions)
+    
+    if (!session || !session.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    
+    // SECURITY: Get list of accessible guild IDs for this user
+    const { getAccessibleGuildsForUser } = await import('@/lib/guild-access')
+    const accessibleGuildIds = await getAccessibleGuildsForUser(session)
+    
+    if (accessibleGuildIds.length === 0) {
+      return NextResponse.json({
+        resources: [],
+        pagination: { page: 1, limit, totalCount: 0, totalPages: 0, hasNextPage: false, hasPreviousPage: false }
+      }, {
+        headers: { 'Cache-Control': 'no-store, no-cache, max-age=0' }
+      })
+    }
+    
+    // If specific guild requested, verify access
+    let targetGuildIds: string[]
     if (guildId) {
-      const { getServerSession } = await import('next-auth')
-      const { authOptions } = await import('@/lib/auth')
-      const session = await getServerSession(authOptions)
-      
-      if (!session || !session.user) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-      
       // Use session data for quick server membership check (no Discord API calls)
       const userDiscordServers = session.user.allServerIds || []
       const { guilds } = await import('@/lib/db')
@@ -55,6 +69,10 @@ export async function GET(request: NextRequest) {
       if (guild.length === 0 || !guild[0].discordGuildId || !userDiscordServers.includes(guild[0].discordGuildId)) {
         return NextResponse.json({ error: 'Access denied' }, { status: 403 })
       }
+      targetGuildIds = [guildId]
+    } else {
+      // All guilds mode - use accessible guilds
+      targetGuildIds = accessibleGuildIds
     }
     
     // Validate pagination params
@@ -63,16 +81,23 @@ export async function GET(request: NextRequest) {
     const offset = (validatedPage - 1) * validatedLimit
     
     // Build where clause with guild filter and search
-    const { and, like } = await import('drizzle-orm')
+    // SECURITY: Always filter by accessible guilds
+    const { and, like, inArray } = await import('drizzle-orm')
     let whereClause
-    if (guildId && search) {
-      whereClause = and(eq(resources.guildId, guildId), like(resources.name, `%${search}%`))
-    } else if (guildId) {
-      whereClause = eq(resources.guildId, guildId)
-    } else if (search) {
-      whereClause = like(resources.name, `%${search}%`)
+    if (targetGuildIds.length === 1) {
+      // Single guild - use eq for efficiency
+      if (search) {
+        whereClause = and(eq(resources.guildId, targetGuildIds[0]), like(resources.name, `%${search}%`))
+      } else {
+        whereClause = eq(resources.guildId, targetGuildIds[0])
+      }
     } else {
-      whereClause = undefined
+      // Multiple guilds - use inArray
+      if (search) {
+        whereClause = and(inArray(resources.guildId, targetGuildIds), like(resources.name, `%${search}%`))
+      } else {
+        whereClause = inArray(resources.guildId, targetGuildIds)
+      }
     }
     
     // Get total count using SQL COUNT - much faster than fetching all rows
@@ -84,10 +109,26 @@ export async function GET(request: NextRequest) {
     const totalCount = countResult[0]?.count || 0
     const totalPages = Math.ceil(totalCount / validatedLimit)
     
-    // Get paginated results (no join for speed)
+    // Get paginated results with guild info for "All Guilds" view
+    const { guilds } = await import('@/lib/db')
     const paginatedResources = await db
-      .select()
+      .select({
+        id: resources.id,
+        guildId: resources.guildId,
+        name: resources.name,
+        quantity: resources.quantity,
+        targetQuantity: resources.targetQuantity,
+        category: resources.category,
+        description: resources.description,
+        imageUrl: resources.imageUrl,
+        multiplier: resources.multiplier,
+        lastUpdatedBy: resources.lastUpdatedBy,
+        createdAt: resources.createdAt,
+        updatedAt: resources.updatedAt,
+        guildName: guilds.title, // Include guild name for display
+      })
       .from(resources)
+      .leftJoin(guilds, eq(resources.guildId, guilds.id))
       .where(whereClause)
       .limit(validatedLimit)
       .offset(offset)

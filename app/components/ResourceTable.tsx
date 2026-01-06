@@ -139,6 +139,8 @@ interface Resource {
   multiplier?: number // Points multiplier for this resource
   lastUpdatedBy: string
   updatedAt: string
+  guildId?: string // For showing guild context in "All Guilds" view
+  guildName?: string // Guild name for display
 }
 
 interface ResourceUpdate {
@@ -151,6 +153,7 @@ interface ResourceUpdate {
 interface ResourceTableProps {
   userId: string
   guildId?: string | null
+  showGuildColumn?: boolean // Show guild name column when viewing all guilds
 }
 
 interface PointsCalculation {
@@ -193,7 +196,7 @@ interface GuildPermissions {
   isServerOwner?: boolean
 }
 
-export function ResourceTable({ userId, guildId }: ResourceTableProps) {
+export function ResourceTable({ userId, guildId, showGuildColumn = false }: ResourceTableProps) {
   const { data: session } = useSession()
   const router = useRouter()
   
@@ -430,8 +433,13 @@ export function ResourceTable({ userId, guildId }: ResourceTableProps) {
     localStorage.setItem('resourceTableViewMode', newViewMode)
   }
 
-  // Navigate to resource detail page
-  const handleResourceClick = (resourceId: string) => {
+  // Navigate to resource detail page with guild context
+  const handleResourceClick = (resourceId: string, resourceGuildId?: string) => {
+    // If we have a specific guild context, store it for the detail page
+    const targetGuildId = resourceGuildId || guildId
+    if (targetGuildId) {
+      localStorage.setItem('resourceDetailGuildId', targetGuildId)
+    }
     router.push(`/resources/${resourceId}`)
   }
 
@@ -1022,23 +1030,26 @@ export function ResourceTable({ userId, guildId }: ResourceTableProps) {
     }
   }
 
+  // Track if component is ready to fetch (either has a specific guildId or is in "all guilds" mode)
+  const isReadyToFetch = guildId !== undefined // guildId can be null (all guilds) or a string (specific guild)
+
   // Fetch resources on component mount and when guildId, page, itemsPerPage, or search changes
   useEffect(() => {
-    if (guildId) {
+    if (isReadyToFetch) {
       fetchResources()
       fetchRecentActivity()
       fetchLeaderboard()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [guildId, currentPage, itemsPerPage, activeSearchTerm])
+  }, [guildId, currentPage, itemsPerPage, activeSearchTerm, isReadyToFetch])
 
   // Fetch leaderboard when time filter changes
   useEffect(() => {
-    if (guildId) {
+    if (isReadyToFetch) {
       fetchLeaderboard()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [leaderboardTimeFilter])
+  }, [leaderboardTimeFilter, isReadyToFetch])
 
   // Filter resources based on status and needsUpdate filters (search is now server-side)
   const filteredResources = resources.filter(resource => {
@@ -1162,7 +1173,7 @@ export function ResourceTable({ userId, guildId }: ResourceTableProps) {
             <div className="space-y-3">
               {recentActivity.slice(0, 5).map((activity) => (
                 <div key={activity.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors cursor-pointer"
-                     onClick={() => handleResourceClick(activity.resourceId)}>
+                     onClick={() => handleResourceClick(activity.resourceId, activity.resourceGuildId)}>
                   <div className="flex items-center gap-3">
                     <div className={`w-2 h-2 rounded-full ${
                       activity.changeAmount > 0 ? 'bg-green-500' : 
