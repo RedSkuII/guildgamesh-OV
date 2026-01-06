@@ -13,7 +13,8 @@
     "populate-resources": "tsx scripts/populate-resources.ts",
     "populate-resources-safe": "tsx scripts/populate-resources-safe.ts",
     "add-resources-with-images": "tsx scripts/add-resources-with-images.ts",
-    "reset-guild": "tsx scripts/reset-guild-to-defaults.ts"
+    "reset-guild": "tsx scripts/reset-guild-to-defaults.ts",
+    "prepare": "husky"
   },
   "dependencies": {
     "@libsql/client": "^0.4.3",
@@ -38,6 +39,17 @@
   "devDependencies": {
     "eslint": "8.56.0",
     "eslint-config-next": "14.0.4",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
     "tsx": "^4.20.3"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "npx tsc --noEmit --skipLibCheck",
+      "eslint --fix"
+    ],
+    "*.{js,jsx}": [
+      "eslint --fix"
+    ]
   }
 }
