@@ -116,7 +116,7 @@ export default function GuildSelector({
     )
   }
 
-  // If user only has one guild and we don't need to show "All" option, just display the guild name
+  // If user only has one guild and showAllOption is false, just display the guild name (no dropdown needed)
   if (guilds.length === 1 && !showAllOption) {
     return (
       <div className="flex items-center gap-3">
@@ -128,19 +128,26 @@ export default function GuildSelector({
     )
   }
 
-  // Determine if we should show the "All" option (only if user has multiple guilds)
+  // Show "All Guilds" option only if user has multiple guilds
   const shouldShowAllOption = showAllOption && guilds.length > 1
+  
+  console.log('[GuildSelector] Rendering dropdown:', { 
+    guildsCount: guilds.length, 
+    showAllOption, 
+    shouldShowAllOption,
+    selectedGuildId 
+  })
 
   return (
     <div className="flex items-center gap-3">
       <label htmlFor="guild-selector" className="text-sm font-medium text-gray-300">
-        In-Game Guild:
+        {guilds.length > 1 ? 'Guild:' : 'In-Game Guild:'}
       </label>
       <select
         id="guild-selector"
         value={selectedGuildId === 'all' ? 'all' : (selectedGuildId && guilds.some(g => g.id === selectedGuildId) ? selectedGuildId : (guilds[0]?.id || ''))}
         onChange={(e) => onGuildChange(e.target.value)}
-        className="rounded-lg border border-gray-600 bg-gray-700 px-4 py-2 text-white shadow-sm focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+        className="rounded-lg border border-gray-600 bg-gray-700 px-4 py-2 text-white shadow-sm focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500 min-w-[180px]"
       >
         {shouldShowAllOption && (
           <option value="all">{allOptionLabel}</option>
