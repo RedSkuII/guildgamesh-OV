@@ -207,12 +207,20 @@ export function ResourceTable({ userId, guildId, showGuildColumn = false }: Reso
   
   // Guild-specific permissions (fetched from API)
   const [guildPermissions, setGuildPermissions] = useState<GuildPermissions | null>(null)
+  const [permissionsLoading, setPermissionsLoading] = useState(true)
   
   // Effective permissions:
   // - canUpdateQuantities: Any guild member can update quantities (global admin OR guild member)
-  // - isResourceAdmin: Only leader/officer can edit metadata (global admin OR leader/officer)
+  // - isResourceAdmin: Only leader/officer can edit metadata - use GUILD-SPECIFIC permission when available
+  //   This ensures regular members don't see Edit/Delete just because they're Discord admin on another server
   const canUpdateQuantities = globalResourceAdmin || guildPermissions?.canUpdateResources || false
-  const isResourceAdmin = globalResourceAdmin || guildPermissions?.canManageResources || false
+  // For resource admin, prefer guild-specific permission when available, otherwise fall back to global
+  // While permissions are loading, hide admin UI to prevent flicker
+  const isResourceAdmin = permissionsLoading 
+    ? false 
+    : (guildPermissions !== null 
+        ? guildPermissions.canManageResources 
+        : globalResourceAdmin)
   
 
   
@@ -314,9 +322,11 @@ export function ResourceTable({ userId, guildId, showGuildColumn = false }: Reso
     const fetchGuildPermissions = async () => {
       if (!guildId || !session) {
         setGuildPermissions(null)
+        setPermissionsLoading(false)
         return
       }
       
+      setPermissionsLoading(true)
       try {
         const response = await fetch(`/api/guilds/${guildId}/permissions`)
         if (response.ok) {
@@ -330,6 +340,8 @@ export function ResourceTable({ userId, guildId, showGuildColumn = false }: Reso
       } catch (error) {
         console.error('[ResourceTable] Error fetching guild permissions:', error)
         setGuildPermissions(null)
+      } finally {
+        setPermissionsLoading(false)
       }
     }
     
