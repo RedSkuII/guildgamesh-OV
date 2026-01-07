@@ -363,9 +363,10 @@ export const authOptions: NextAuthOptions = {
           hasReportAccess: isSuperAdmin || hasReportAccess(userRoles),
           hasUserManagementAccess: isSuperAdmin || hasUserManagementAccess(userRoles),
           hasDataExportAccess: isSuperAdmin || hasDataExportAccess(userRoles),
-          // True admin = super admin OR role-based admin (NOT Discord ADMINISTRATOR)
+          // True admin = super admin OR role-based admin from DISCORD_ROLES_CONFIG
+          // NOT Discord ADMINISTRATOR, NOT server owner, NOT guild leader/officer
           // Used to restrict Bot Dashboard and Admin Panel to actual app admins
-          isTrueAdmin: isSuperAdmin || hasResourceAdminAccess(userRoles, isServerOwner)
+          isTrueAdmin: isSuperAdmin || hasResourceAdminAccess(userRoles, false)  // false = don't grant for server owner
         }
         token.permissions = permissions
         
