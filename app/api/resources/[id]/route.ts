@@ -280,9 +280,15 @@ export async function DELETE(
       const discordServerId = guild[0].discordGuildId
       const serverRoles = session.user.serverRolesMap?.[discordServerId] || []
       const isOwner = isDiscordServerOwner(session, discordServerId)
+      const hasGlobalAdmin = hasResourceAdminAccess(serverRoles, isOwner)
       
-      if (!hasResourceAdminAccess(serverRoles, isOwner)) {
-        return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
+      // Check guild-specific permissions (leaders/officers can manage resources)
+      const { canManageGuildResources } = await import('@/lib/guild-access')
+      const canManage = await canManageGuildResources(resource[0].guildId!, serverRoles, hasGlobalAdmin)
+      
+      if (!canManage) {
+        console.log(`[API DELETE /api/resources/${params.id}] User ${session.user.name} denied - not a leader/officer of guild ${resource[0].guildId}`)
+        return NextResponse.json({ error: 'Only guild leaders and officers can delete resources' }, { status: 403 })
       }
     }
 
