@@ -202,7 +202,7 @@ export function ResourceTable({ userId, guildId, showGuildColumn = false }: Reso
   
   // Use pre-computed permissions from session (computed server-side)
   const canEdit = session?.user?.permissions?.hasResourceAccess ?? false
-  const isTargetAdmin = session?.user?.permissions?.hasTargetEditAccess ?? false
+  const globalTargetAdmin = session?.user?.permissions?.hasTargetEditAccess ?? false
   const globalResourceAdmin = session?.user?.permissions?.hasResourceAdminAccess ?? false
   
   // Guild-specific permissions (fetched from API)
@@ -212,15 +212,21 @@ export function ResourceTable({ userId, guildId, showGuildColumn = false }: Reso
   // Effective permissions:
   // - canUpdateQuantities: Any guild member can update quantities (global admin OR guild member)
   // - isResourceAdmin: Only leader/officer can edit metadata - use GUILD-SPECIFIC permission when available
-  //   This ensures regular members don't see Edit/Delete just because they're Discord admin on another server
+  // - isTargetAdmin: Same as isResourceAdmin - only leaders/officers can edit targets
+  //   This ensures regular members don't see Edit/Delete/Target just because they're Discord admin on another server
   const canUpdateQuantities = globalResourceAdmin || guildPermissions?.canUpdateResources || false
-  // For resource admin, prefer guild-specific permission when available, otherwise fall back to global
+  // For resource admin and target admin, prefer guild-specific permission when available, otherwise fall back to global
   // While permissions are loading, hide admin UI to prevent flicker
   const isResourceAdmin = permissionsLoading 
     ? false 
     : (guildPermissions !== null 
         ? guildPermissions.canManageResources 
         : globalResourceAdmin)
+  const isTargetAdmin = permissionsLoading 
+    ? false 
+    : (guildPermissions !== null 
+        ? guildPermissions.canManageResources 
+        : globalTargetAdmin)
   
 
   
