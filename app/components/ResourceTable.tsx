@@ -434,6 +434,10 @@ export function ResourceTable({ userId, guildId, showGuildColumn = false }: Reso
   }
 
   // Navigate to resource detail page with guild context
+  // Uses onMouseDown to track where click started, preventing accidental navigation
+  // when user drags while selecting text in input fields
+  const [clickStartedOnRow, setClickStartedOnRow] = useState<string | null>(null)
+  
   const handleResourceClick = (resourceId: string, resourceGuildId?: string) => {
     // If we have a specific guild context, store it for the detail page
     const targetGuildId = resourceGuildId || guildId
@@ -441,6 +445,26 @@ export function ResourceTable({ userId, guildId, showGuildColumn = false }: Reso
       localStorage.setItem('resourceDetailGuildId', targetGuildId)
     }
     router.push(`/resources/${resourceId}`)
+  }
+  
+  // Handle row mouse down - track that click started on this row
+  const handleRowMouseDown = (resourceId: string, e: React.MouseEvent) => {
+    // Don't track if click started on an interactive element
+    const target = e.target as HTMLElement
+    if (target.tagName === 'INPUT' || target.tagName === 'BUTTON' || target.tagName === 'SELECT' || 
+        target.closest('input') || target.closest('button') || target.closest('select')) {
+      setClickStartedOnRow(null)
+      return
+    }
+    setClickStartedOnRow(resourceId)
+  }
+  
+  // Handle row click - only navigate if mousedown started on this same row
+  const handleRowClick = (resourceId: string, resourceGuildId?: string) => {
+    if (clickStartedOnRow === resourceId) {
+      handleResourceClick(resourceId, resourceGuildId)
+    }
+    setClickStartedOnRow(null)
   }
 
   // Update resource status immediately and track changes
@@ -1173,7 +1197,8 @@ export function ResourceTable({ userId, guildId, showGuildColumn = false }: Reso
             <div className="space-y-3">
               {recentActivity.slice(0, 5).map((activity) => (
                 <div key={activity.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors cursor-pointer"
-                     onClick={() => handleResourceClick(activity.resourceId, activity.resourceGuildId)}>
+                     onMouseDown={(e) => handleRowMouseDown(activity.resourceId, e)}
+                     onClick={() => handleRowClick(activity.resourceId, activity.resourceGuildId)}>
                   <div className="flex items-center gap-3">
                     <div className={`w-2 h-2 rounded-full ${
                       activity.changeAmount > 0 ? 'bg-green-500' : 
@@ -1831,7 +1856,8 @@ export function ResourceTable({ userId, guildId, showGuildColumn = false }: Reso
                           ? 'border-amber-300 dark:border-amber-600 ring-1 ring-amber-200 dark:ring-amber-800 bg-amber-50/50 dark:bg-amber-900/10' 
                           : 'border-guildgamesh-300 dark:border-primary-700/30'
                       }`}
-                      onClick={() => handleResourceClick(resource.id)}
+                      onMouseDown={(e) => handleRowMouseDown(resource.id, e)}
+                      onClick={() => handleRowClick(resource.id, resource.guildId)}
                       title={isStale ? "⚠️ Not updated in 48+ hours - Click to view details" : "Click to view detailed resource information"}
                     >
                       {/* Resource Image */}
@@ -2200,7 +2226,8 @@ export function ResourceTable({ userId, guildId, showGuildColumn = false }: Reso
                           ? 'bg-amber-50/50 dark:bg-amber-900/10 hover:bg-amber-100/50 dark:hover:bg-amber-900/20 border-l-4 border-l-amber-400 dark:border-l-amber-500' 
                           : 'hover:bg-gray-50 dark:hover:bg-gray-700'
                       }`}
-                      onClick={() => handleResourceClick(resource.id)}
+                      onMouseDown={(e) => handleRowMouseDown(resource.id, e)}
+                      onClick={() => handleRowClick(resource.id, resource.guildId)}
                       title={isStale ? "⚠️ Not updated in 48+ hours - Click to view details" : "Click to view detailed resource information"}
                     >
                       <td className="px-3 py-3 whitespace-nowrap">
