@@ -204,6 +204,8 @@ export function ResourceTable({ userId, guildId, showGuildColumn = false }: Reso
   const canEdit = session?.user?.permissions?.hasResourceAccess ?? false
   const globalTargetAdmin = session?.user?.permissions?.hasTargetEditAccess ?? false
   const globalResourceAdmin = session?.user?.permissions?.hasResourceAdminAccess ?? false
+  // True admin = super admin or role-based admin (NOT Discord ADMINISTRATOR or guild leader/officer)
+  const isTrueAdmin = session?.user?.permissions?.isTrueAdmin ?? false
   
   // Guild-specific permissions (fetched from API)
   const [guildPermissions, setGuildPermissions] = useState<GuildPermissions | null>(null)
@@ -1331,8 +1333,8 @@ export function ResourceTable({ userId, guildId, showGuildColumn = false }: Reso
         </div>
       </div>
 
-      {/* Admin Panel */}
-      {isResourceAdmin && (
+      {/* Admin Panel - Only for true admins (super admin or role-based), NOT guild leaders/officers */}
+      {isTrueAdmin && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
