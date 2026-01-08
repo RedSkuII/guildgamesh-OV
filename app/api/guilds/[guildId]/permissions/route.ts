@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { canManageGuildResources, canUpdateGuildResources, canAccessGuild } from '@/lib/guild-access'
+import { canManageGuildResources, canUpdateGuildResources, getGuildMembershipRole } from '@/lib/guild-access'
 import { hasResourceAdminAccess, isDiscordServerOwner } from '@/lib/discord-roles'
 import { db, guilds } from '@/lib/db'
 import { eq } from 'drizzle-orm'
@@ -13,7 +13,7 @@ import { eq } from 'drizzle-orm'
  * Permission levels:
  * - canUpdateResources: Any guild member (member, officer, leader) can update quantities
  * - canManageResources: Leaders and officers can create/edit metadata/delete resources
- * - canEditTargets: Global admins and target editors can edit target quantities
+ * - canEditTargets: True admins, server owner, Discord admin for THIS server, or guild leader/officer
  */
 export async function GET(
   request: NextRequest,
@@ -66,14 +66,12 @@ export async function GET(
     // Check global admin access
     const hasGlobalAdmin = hasResourceAdminAccess(userRoles, isOwner)
     
+    // Check guild-specific membership
+    const { isLeader, isOfficer, isMember } = await getGuildMembershipRole(guildId, userRoles)
+    
     // Check guild-specific permissions
     const canUpdate = await canUpdateGuildResources(guildId, userRoles, hasGlobalAdmin)
     const canManage = await canManageGuildResources(guildId, userRoles, hasGlobalAdmin)
-    
-    // Determine role type for UI display first (needed for canEditTargets)
-    const isLeader = guild.discordLeaderRoleId ? userRoles.includes(guild.discordLeaderRoleId) : false
-    const isOfficer = guild.discordOfficerRoleId ? userRoles.includes(guild.discordOfficerRoleId) : false
-    const isMember = guild.discordRoleId ? userRoles.includes(guild.discordRoleId) : false
     
     // Target editing: Only guild-specific checks - NO global hasTargetEditAccess
     // This prevents users with target edit roles in one server from editing targets in other servers
