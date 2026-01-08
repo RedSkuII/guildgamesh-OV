@@ -58,6 +58,11 @@ export async function GET(
     // Check if user owns this Discord server
     const isOwner = isDiscordServerOwner(session, discordServerId)
     
+    // Check if user is Discord ADMINISTRATOR specifically for THIS guild's Discord server
+    // This ensures Discord admins only get elevated access for their own server's guilds
+    const adminServerIds = (session.user.adminServerIds || []) as string[]
+    const isDiscordAdminForThisServer = discordServerId ? adminServerIds.includes(discordServerId) : false
+    
     // Check global admin access
     const hasGlobalAdmin = hasResourceAdminAccess(userRoles, isOwner)
     
@@ -70,13 +75,13 @@ export async function GET(
     const isOfficer = guild.discordOfficerRoleId ? userRoles.includes(guild.discordOfficerRoleId) : false
     const isMember = guild.discordRoleId ? userRoles.includes(guild.discordRoleId) : false
     
-    // Target editing: global admin, target edit permission, or guild leader/officer
-    const canEditTargets = hasGlobalAdmin || session.user.permissions?.hasTargetEditAccess || isLeader || isOfficer
+    // Target editing: global admin, global target edit permission, Discord admin for THIS server, or guild leader/officer
+    const canEditTargets = hasGlobalAdmin || session.user.permissions?.hasTargetEditAccess || isDiscordAdminForThisServer || isLeader || isOfficer
     
     console.log(`[PERMISSIONS API] User ${session.user.id} for guild ${guild.title}:`)
     console.log(`  - isLeader: ${isLeader}, isOfficer: ${isOfficer}, isMember: ${isMember}`)
-    console.log(`  - hasGlobalAdmin: ${hasGlobalAdmin}, isOwner: ${isOwner}`)
-    console.log(`  - canUpdateResources: ${canUpdate}, canManageResources: ${canManage}`)
+    console.log(`  - hasGlobalAdmin: ${hasGlobalAdmin}, isOwner: ${isOwner}, isDiscordAdminForThisServer: ${isDiscordAdminForThisServer}`)
+    console.log(`  - canUpdateResources: ${canUpdate}, canManageResources: ${canManage}, canEditTargets: ${canEditTargets}`)
     
     return NextResponse.json({
       canUpdateResources: canUpdate,
@@ -86,7 +91,8 @@ export async function GET(
       isOfficer,
       isMember,
       hasGlobalAdmin,
-      isServerOwner: isOwner
+      isServerOwner: isOwner,
+      isDiscordAdmin: isDiscordAdminForThisServer
     })
   } catch (error) {
     console.error('[PERMISSIONS API] Error:', error)
