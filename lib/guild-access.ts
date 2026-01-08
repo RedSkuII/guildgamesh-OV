@@ -250,144 +250,129 @@ export async function getAccessibleGuilds(
     return []
   }
 }
+
+/**
+ * Check if user is a guild leader or officer for a specific guild
+ * @param guildId - The in-game guild ID
+ * @param userRoles - Array of user's Discord role IDs
+ * @returns Promise<{ isLeader: boolean, isOfficer: boolean, isMember: boolean }> - User's role in the guild
+ */
+export async function getGuildMembershipRole(
+  guildId: string,
+  userRoles: string[]
+): Promise<{ isLeader: boolean, isOfficer: boolean, isMember: boolean }> {
+  try {
+    // Fetch guild configuration
+    const guildData = await db
+      .select()
+      .from(guilds)
+      .where(eq(guilds.id, guildId))
+      .limit(1)
+
+    if (guildData.length === 0) {
+      console.log(`[GUILD-ACCESS] Guild not found: ${guildId}`)
+      return { isLeader: false, isOfficer: false, isMember: false }
+    }
+
+    const guild = guildData[0]
+    
+    console.log(`[GUILD-ACCESS] Checking membership for guild "${guild.title}"`)
+    console.log(`[GUILD-ACCESS] Guild's Leader role: ${guild.discordLeaderRoleId || 'NOT SET'}`)
+    console.log(`[GUILD-ACCESS] Guild's Officer role: ${guild.discordOfficerRoleId || 'NOT SET'}`)
+    console.log(`[GUILD-ACCESS] Guild's Member role: ${guild.discordRoleId || 'NOT SET'}`)
+
+    // Check if user has the leader role
+    const isLeader = guild.discordLeaderRoleId ? userRoles.includes(guild.discordLeaderRoleId) : false
+
+    // Check if user has the officer role
+    const isOfficer = guild.discordOfficerRoleId ? userRoles.includes(guild.discordOfficerRoleId) : false
+
+    // Check if user has the member role
+    const isMember = guild.discordRoleId ? userRoles.includes(guild.discordRoleId) : false
+
+    if (isLeader) {
+      console.log(`[GUILD-ACCESS] ✓ User is LEADER of "${guild.title}"`)
+    } else if (isOfficer) {
+      console.log(`[GUILD-ACCESS] ✓ User is OFFICER of "${guild.title}"`)
+    } else if (isMember) {
+      console.log(`[GUILD-ACCESS] User is MEMBER of "${guild.title}" (can view but not manage)`)
+    } else {
+      console.log(`[GUILD-ACCESS] ✗ User has NONE of the guild's roles`)
+    }
+
+    return { isLeader, isOfficer, isMember }
+  } catch (error) {
+    console.error('[GUILD-ACCESS] Error checking guild membership role:', error)
+    return { isLeader: false, isOfficer: false, isMember: false }
+  }
+}
+
 /**
  * Check if user can UPDATE resource quantities for a specific guild (any guild member)
  * This is different from canManageGuildResources which is for metadata changes (leader/officer only)
- * @param guildId - The in-game guild ID (e.g., 'house-melange')
+ * @param guildId - The in-game guild ID
  * @param userRoles - Array of user's Discord role IDs
- * @param hasGlobalAdmin - Whether user has global resource admin access
+ * @param hasGlobalAdminAccess - Whether user has global admin access
  * @returns Promise<boolean> - True if user can update resource quantities
  */
 export async function canUpdateGuildResources(
   guildId: string,
   userRoles: string[],
-  hasGlobalAdmin: boolean = false
+  hasGlobalAdminAccess: boolean = false
 ): Promise<boolean> {
-  try {
-    // Global admins can update all guilds
-    if (hasGlobalAdmin) {
-      return true
-    }
-
-    // Fetch guild configuration
-    const guildData = await db
-      .select()
-      .from(guilds)
-      .where(eq(guilds.id, guildId))
-      .limit(1)
-
-    if (guildData.length === 0) {
-      console.warn(`[GUILD-ACCESS] Guild not found for update check: ${guildId}`)
-      return false
-    }
-
-    const guild = guildData[0]
-
-    // Check ALL guild roles - member, officer, leader can all update quantities
-    const guildRoles = [
-      guild.discordRoleId,        // Member role
-      guild.discordOfficerRoleId,  // Officer role
-      guild.discordLeaderRoleId    // Leader role
-    ].filter(Boolean) as string[]
-
-    // Also check admin roles
-    if (guild.adminRoleId) {
-      try {
-        const adminRoles = JSON.parse(guild.adminRoleId)
-        guildRoles.push(...adminRoles)
-      } catch {
-        guildRoles.push(guild.adminRoleId)
-      }
-    }
-
-    if (guildRoles.length === 0) {
-      console.log(`[GUILD-ACCESS] ✗ No roles configured for "${guild.title}"`)
-      return false
-    }
-
-    const hasGuildRole = guildRoles.some(roleId => userRoles.includes(roleId))
-
-    if (hasGuildRole) {
-      console.log(`[GUILD-ACCESS] ✓ User can update resources for "${guild.title}"`)
-    } else {
-      console.log(`[GUILD-ACCESS] ✗ User cannot update resources for "${guild.title}"`)
-    }
-
-    return hasGuildRole
-
-  } catch (error) {
-    console.error('[GUILD-ACCESS] Error checking guild update access:', error)
-    return false
+  console.log(`[GUILD-ACCESS] canUpdateGuildResources called for guild ${guildId}`)
+  
+  // Global admins can update all guilds
+  if (hasGlobalAdminAccess) {
+    console.log(`[GUILD-ACCESS] ✓ User has global admin access`)
+    return true
   }
+
+  // Check guild-specific role - ANY role (member, officer, leader) can update quantities
+  const { isLeader, isOfficer, isMember } = await getGuildMembershipRole(guildId, userRoles)
+  
+  console.log(`[GUILD-ACCESS] Guild role check: isLeader=${isLeader}, isOfficer=${isOfficer}, isMember=${isMember}`)
+  
+  // Any guild member can update quantities
+  const canUpdate = isLeader || isOfficer || isMember
+  console.log(`[GUILD-ACCESS] canUpdateGuildResources result: ${canUpdate}`)
+  
+  return canUpdate
 }
 
 /**
- * Check if user can MANAGE (create/edit metadata/delete) resources for a specific guild
- * This requires leader, officer, or admin role - regular members cannot manage
- * @param guildId - The in-game guild ID (e.g., 'house-melange')
+ * Check if user can MANAGE resources for a specific guild (create/edit metadata/delete)
+ * Leaders and officers can manage resources for their guild - regular members cannot
+ * @param guildId - The in-game guild ID
  * @param userRoles - Array of user's Discord role IDs
- * @param hasGlobalAdmin - Whether user has global resource admin access
+ * @param hasGlobalAdminAccess - Whether user has global admin access
  * @returns Promise<boolean> - True if user can manage resources for this guild
  */
 export async function canManageGuildResources(
   guildId: string,
   userRoles: string[],
-  hasGlobalAdmin: boolean = false
+  hasGlobalAdminAccess: boolean = false
 ): Promise<boolean> {
-  try {
-    // Global admins can manage all guilds
-    if (hasGlobalAdmin) {
-      return true
-    }
-
-    // Fetch guild configuration
-    const guildData = await db
-      .select()
-      .from(guilds)
-      .where(eq(guilds.id, guildId))
-      .limit(1)
-
-    if (guildData.length === 0) {
-      console.warn(`[GUILD-ACCESS] Guild not found for manage check: ${guildId}`)
-      return false
-    }
-
-    const guild = guildData[0]
-
-    // Leader role = full management access
-    if (guild.discordLeaderRoleId && userRoles.includes(guild.discordLeaderRoleId)) {
-      console.log(`[GUILD-ACCESS] ✓ User has leader role for "${guild.title}"`)
-      return true
-    }
-
-    // Officer role = management access
-    if (guild.discordOfficerRoleId && userRoles.includes(guild.discordOfficerRoleId)) {
-      console.log(`[GUILD-ACCESS] ✓ User has officer role for "${guild.title}"`)
-      return true
-    }
-
-    // Admin role = management access (bot admin for this guild)
-    if (guild.adminRoleId) {
-      let adminRoles: string[]
-      try {
-        adminRoles = JSON.parse(guild.adminRoleId)
-      } catch {
-        adminRoles = [guild.adminRoleId]
-      }
-      
-      if (adminRoles.some(roleId => userRoles.includes(roleId))) {
-        console.log(`[GUILD-ACCESS] ✓ User has admin role for "${guild.title}"`)
-        return true
-      }
-    }
-
-    console.log(`[GUILD-ACCESS] ✗ User cannot manage resources for "${guild.title}"`)
-    return false
-
-  } catch (error) {
-    console.error('[GUILD-ACCESS] Error checking guild management access:', error)
-    return false
+  console.log(`[GUILD-ACCESS] canManageGuildResources called for guild ${guildId}`)
+  console.log(`[GUILD-ACCESS] User has ${userRoles.length} roles: ${userRoles.slice(0, 5).join(', ')}${userRoles.length > 5 ? '...' : ''}`)
+  console.log(`[GUILD-ACCESS] hasGlobalAdminAccess: ${hasGlobalAdminAccess}`)
+  
+  // Global admins can manage all guilds
+  if (hasGlobalAdminAccess) {
+    console.log(`[GUILD-ACCESS] ✓ User has global admin access`)
+    return true
   }
+
+  // Check guild-specific role
+  const { isLeader, isOfficer } = await getGuildMembershipRole(guildId, userRoles)
+  
+  console.log(`[GUILD-ACCESS] Guild role check: isLeader=${isLeader}, isOfficer=${isOfficer}`)
+  
+  // Leaders and officers can manage guild resources
+  const canManage = isLeader || isOfficer
+  console.log(`[GUILD-ACCESS] canManageGuildResources result: ${canManage}`)
+  
+  return canManage
 }
 
 /**
