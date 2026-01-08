@@ -65,13 +65,13 @@ export async function GET(
     const canUpdate = await canUpdateGuildResources(guildId, userRoles, hasGlobalAdmin)
     const canManage = await canManageGuildResources(guildId, userRoles, hasGlobalAdmin)
     
-    // Target editing requires global admin or target edit permission
-    const canEditTargets = hasGlobalAdmin || session.user.permissions?.hasTargetEditAccess
-    
-    // Determine role type for UI display
+    // Determine role type for UI display first (needed for canEditTargets)
     const isLeader = guild.discordLeaderRoleId ? userRoles.includes(guild.discordLeaderRoleId) : false
     const isOfficer = guild.discordOfficerRoleId ? userRoles.includes(guild.discordOfficerRoleId) : false
     const isMember = guild.discordRoleId ? userRoles.includes(guild.discordRoleId) : false
+    
+    // Target editing: global admin, target edit permission, or guild leader/officer
+    const canEditTargets = hasGlobalAdmin || session.user.permissions?.hasTargetEditAccess || isLeader || isOfficer
     
     console.log(`[PERMISSIONS API] User ${session.user.id} for guild ${guild.title}:`)
     console.log(`  - isLeader: ${isLeader}, isOfficer: ${isOfficer}, isMember: ${isMember}`)

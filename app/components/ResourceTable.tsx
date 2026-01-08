@@ -227,7 +227,7 @@ export function ResourceTable({ userId, guildId, showGuildColumn = false }: Reso
   const isTargetAdmin = permissionsLoading 
     ? false 
     : (guildPermissions !== null 
-        ? guildPermissions.canManageResources 
+        ? guildPermissions.canEditTargets 
         : globalTargetAdmin)
   
 
