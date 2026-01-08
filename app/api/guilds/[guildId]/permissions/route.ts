@@ -75,8 +75,10 @@ export async function GET(
     const isOfficer = guild.discordOfficerRoleId ? userRoles.includes(guild.discordOfficerRoleId) : false
     const isMember = guild.discordRoleId ? userRoles.includes(guild.discordRoleId) : false
     
-    // Target editing: global admin, global target edit permission, Discord admin for THIS server, or guild leader/officer
-    const canEditTargets = hasGlobalAdmin || session.user.permissions?.hasTargetEditAccess || isDiscordAdminForThisServer || isLeader || isOfficer
+    // Target editing: Only guild-specific checks - NO global hasTargetEditAccess
+    // This prevents users with target edit roles in one server from editing targets in other servers
+    // Allowed: true admins, server owner for THIS server, Discord admin for THIS server, or guild leader/officer
+    const canEditTargets = hasGlobalAdmin || isOwner || isDiscordAdminForThisServer || isLeader || isOfficer
     
     console.log(`[PERMISSIONS API] User ${session.user.id} for guild ${guild.title}:`)
     console.log(`  - isLeader: ${isLeader}, isOfficer: ${isOfficer}, isMember: ${isMember}`)
