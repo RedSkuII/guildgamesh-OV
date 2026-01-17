@@ -442,6 +442,7 @@ export async function PUT(request: NextRequest) {
           previousValue: previousQuantity.toString(),
           newValue: update.quantity.toString(),
           changedBy: userId,
+          changedByDiscordId: discordId,  // Store Discord ID for bot to link orders to users
           createdAt: new Date(),
           processedByBot: false,
         })
